@@ -22,8 +22,12 @@ export function FilesPanel({ files, activeFile, onSelect, onAdd, onImport, onExp
           <Text style={styles.title}>ملفات المشروع</Text>
         </View>
         <View style={styles.headerActions}>
-          <Pressable style={styles.secondaryButton} onPress={onImport}><Text style={styles.secondaryText}>استيراد</Text></Pressable>
-          <Pressable style={styles.addButton} onPress={onAdd}><Text style={styles.addText}>＋ ملف</Text></Pressable>
+          <Pressable style={styles.secondaryButton} onPress={onImport} accessibilityRole="button" accessibilityLabel="استيراد ملف أو مشروع">
+            <Text style={styles.secondaryText}>استيراد</Text>
+          </Pressable>
+          <Pressable style={styles.addButton} onPress={onAdd} accessibilityRole="button" accessibilityLabel="إضافة ملف">
+            <Text style={styles.addText}>＋ ملف</Text>
+          </Pressable>
         </View>
       </View>
       <View style={styles.treeCard}>
@@ -35,31 +39,47 @@ export function FilesPanel({ files, activeFile, onSelect, onAdd, onImport, onExp
         {files.map((file) => {
           const language = languageForFile(file.name);
           const selected = file.name === activeFile;
+          const cannotDelete = files.length <= 1;
           return (
-            <Pressable
-              key={file.name}
-              onPress={() => onSelect(file.name)}
-              style={[styles.fileRow, selected && styles.fileRowSelected]}
-            >
-              <Text style={[styles.fileIcon, { color: languageTone(language) }]}>{fileIcon(file.name)}</Text>
-              <View style={styles.fileInfo}>
-                <Text style={[styles.fileName, selected && styles.fileNameSelected]}>{file.name}</Text>
-                <Text style={styles.fileMeta}>{language} · {file.content.split("\n").length} أسطر</Text>
-              </View>
+            <View key={file.name} style={[styles.fileRow, selected && styles.fileRowSelected]}>
+              <Pressable
+                onPress={() => onSelect(file.name)}
+                style={styles.fileMain}
+                accessibilityRole="button"
+                accessibilityLabel={`فتح ${file.name}`}
+              >
+                <Text style={[styles.fileIcon, { color: languageTone(language) }]}>{fileIcon(file.name)}</Text>
+                <View style={styles.fileInfo}>
+                  <Text style={[styles.fileName, selected && styles.fileNameSelected]} numberOfLines={1}>{file.name}</Text>
+                  <Text style={styles.fileMeta}>{language} · {file.content.split("\n").length} أسطر</Text>
+                </View>
+              </Pressable>
               <View style={styles.fileActions}>
-                <Pressable onPress={() => onRename(file.name)} hitSlop={8}>
-                  <Text style={styles.actionText}>•••</Text>
+                <Pressable onPress={() => onRename(file.name)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`إعادة تسمية ${file.name}`}>
+                  <Text style={styles.actionText}>✎</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => onDelete(file.name)}
+                  disabled={cannotDelete}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`حذف ${file.name}`}
+                  accessibilityState={{ disabled: cannotDelete }}
+                >
+                  <Text style={[styles.deleteAction, cannotDelete && styles.actionDisabled]}>⌫</Text>
                 </Pressable>
               </View>
-            </Pressable>
+            </View>
           );
         })}
       </View>
-      <Pressable style={styles.exportButton} onPress={onExport}><Text style={styles.exportIcon}>↗</Text><Text style={styles.exportText}>تصدير حزمة المشروع</Text><Text style={styles.exportHint}>.reactide.json</Text></Pressable>
+      <Pressable style={styles.exportButton} onPress={onExport} accessibilityRole="button" accessibilityLabel="تصدير حزمة المشروع">
+        <Text style={styles.exportIcon}>↗</Text><Text style={styles.exportText}>تصدير حزمة المشروع</Text><Text style={styles.exportHint}>.reactide.json</Text>
+      </Pressable>
       <View style={styles.tipCard}>
         <Text style={styles.tipIcon}>⌁</Text>
         <View style={{ flex: 1 }}>
-          <Text style={styles.tipTitle}>تخزين دائم على الجهاز</Text>
+          <Text style={styles.tipTitle}>تخزين محلي على الجهاز</Text>
           <Text style={styles.tipBody}>تُحفظ تعديلاتك تلقائيًا في مساحة التطبيق، ويمكنك تصدير المشروع أو ربطه بمصدر خارجي.</Text>
         </View>
       </View>
@@ -83,15 +103,18 @@ const styles = StyleSheet.create({
   folderIcon: { color: "#61dafb", fontSize: 18 },
   folderName: { color: "#dbe3ee", fontWeight: "800", flex: 1 },
   localPill: { color: "#53c68c", fontSize: 10, backgroundColor: "rgba(83,198,140,.12)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  fileRow: { minHeight: 64, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 10, borderBottomWidth: 1, borderBottomColor: "#1b2635" },
+  fileRow: { minHeight: 64, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 8, borderBottomWidth: 1, borderBottomColor: "#1b2635" },
   fileRowSelected: { backgroundColor: "rgba(97,218,251,.10)", borderLeftWidth: 3, borderLeftColor: "#61dafb" },
+  fileMain: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10 },
   fileIcon: { width: 28, textAlign: "center", fontFamily: "monospace", fontWeight: "800", fontSize: 15 },
-  fileInfo: { flex: 1 },
+  fileInfo: { flex: 1, minWidth: 0 },
   fileName: { color: "#aebbd0", fontFamily: "monospace", fontSize: 13, fontWeight: "700" },
   fileNameSelected: { color: "#f3f7fc" },
   fileMeta: { color: "#64738a", fontSize: 10, marginTop: 4 },
-  fileActions: { width: 28, alignItems: "center" },
-  actionText: { color: "#8b98ab", fontSize: 16, letterSpacing: 1 },
+  fileActions: { width: 56, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  actionText: { color: "#8b98ab", fontSize: 16, fontWeight: "700" },
+  deleteAction: { color: "#ff8f8a", fontSize: 18, fontWeight: "800" },
+  actionDisabled: { opacity: 0.35 },
   tipCard: { flexDirection: "row", gap: 10, padding: 13, borderRadius: 14, backgroundColor: "#18212e", borderWidth: 1, borderColor: "#2d3d54" },
   exportButton: { flexDirection: "row", alignItems: "center", gap: 8, padding: 13, borderRadius: 13, borderWidth: 1, borderColor: "#2d3d54", backgroundColor: "#111823" },
   exportIcon: { color: "#61dafb", fontSize: 18 },

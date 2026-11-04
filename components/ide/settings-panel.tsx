@@ -1,23 +1,49 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-type SettingsPanelProps = { dark: boolean; fontSize: number; wrap: boolean; onToggleDark: () => void; onChangeFontSize: (size: number) => void; onToggleWrap: () => void; onReset: () => void };
+type SettingsPanelProps = {
+  fontSize: number;
+  onChangeFontSize: (size: number) => void;
+  onReset: () => void;
+};
 
-function SettingRow({ title, body, right, onPress }: { title: string; body: string; right: React.ReactNode; onPress: () => void }) {
-  return <Pressable style={styles.row} onPress={onPress}><View style={{ flex: 1 }}><Text style={styles.rowTitle}>{title}</Text><Text style={styles.rowBody}>{body}</Text></View>{right}</Pressable>;
-}
-
-export function SettingsPanel({ dark, fontSize, wrap, onToggleDark, onChangeFontSize, onToggleWrap, onReset }: SettingsPanelProps) {
-  return <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-    <View><Text style={styles.kicker}>WORKSPACE SETTINGS</Text><Text style={styles.title}>الإعدادات</Text><Text style={styles.subtitle}>اضبط مساحة العمل كما تحب، وتُحفظ التفضيلات مع المشروع.</Text></View>
-    <View style={styles.card}>
-      <SettingRow title="المظهر الداكن" body="مناسب للجلسات الطويلة والعمل الليلي" onPress={onToggleDark} right={<View style={[styles.switch, dark && styles.switchOn]}><View style={[styles.knob, dark && styles.knobOn]} /></View>} />
-      <SettingRow title="التفاف الأسطر" body={wrap ? "مفعل — الكود يلتف داخل الشاشة" : "متوقف — يحافظ على عرض الكود الأصلي"} onPress={onToggleWrap} right={<View style={[styles.switch, wrap && styles.switchOn]}><View style={[styles.knob, wrap && styles.knobOn]} /></View>} />
-      <View style={styles.row}><View style={{ flex: 1 }}><Text style={styles.rowTitle}>حجم خط الكود</Text><Text style={styles.rowBody}>{fontSize}px · استخدم الأزرار للضبط</Text></View><View style={styles.stepper}><Pressable onPress={() => onChangeFontSize(Math.max(11, fontSize - 1))}><Text style={styles.step}>−</Text></Pressable><Text style={styles.fontValue}>{fontSize}</Text><Pressable onPress={() => onChangeFontSize(Math.min(20, fontSize + 1))}><Text style={styles.step}>＋</Text></Pressable></View></View>
-    </View>
-    <View style={styles.infoCard}><Text style={styles.infoIcon}>i</Text><View style={{ flex: 1 }}><Text style={styles.infoTitle}>عن التنفيذ الأصلي</Text><Text style={styles.infoBody}>المحرر وإدارة الملفات والتخزين هنا أصلية في React Native. المعاينة معزولة، ومزودات اللغات الخارجية تُربط لاحقًا عبر API آمن.</Text></View></View>
-    <Pressable style={styles.resetButton} onPress={onReset}><Text style={styles.resetText}>إعادة المشروع إلى القالب الأولي</Text></Pressable>
-    <Text style={styles.version}>React IDE Mobile · v1.0 · Native workspace</Text>
-  </ScrollView>;
+export function SettingsPanel({ fontSize, onChangeFontSize, onReset }: SettingsPanelProps) {
+  return (
+    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+      <View>
+        <Text style={styles.kicker}>WORKSPACE SETTINGS</Text>
+        <Text style={styles.title}>الإعدادات</Text>
+        <Text style={styles.subtitle}>اضبط حجم الخط لهذه الجلسة. المظهر الداكن ثابت في هذه النسخة.</Text>
+      </View>
+      <View style={styles.card}>
+        <View style={styles.row}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowTitle}>حجم خط الكود</Text>
+            <Text style={styles.rowBody}>{fontSize}px · يطبّق فورًا على المحرر</Text>
+          </View>
+          <View style={styles.stepper}>
+            <Pressable onPress={() => onChangeFontSize(Math.max(11, fontSize - 1))} accessibilityRole="button" accessibilityLabel="تصغير الخط">
+              <Text style={styles.step}>−</Text>
+            </Pressable>
+            <Text style={styles.fontValue}>{fontSize}</Text>
+            <Pressable onPress={() => onChangeFontSize(Math.min(20, fontSize + 1))} accessibilityRole="button" accessibilityLabel="تكبير الخط">
+              <Text style={styles.step}>＋</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+      <View style={styles.infoCard}>
+        <Text style={styles.infoIcon}>i</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.infoTitle}>عن التنفيذ الأصلي</Text>
+          <Text style={styles.infoBody}>المحرر وإدارة الملفات والتخزين محلية في تطبيق React Native. المعاينة الفعلية لملفات HTML فقط؛ بقية اللغات تُحرّر كنصوص حتى يتصل runtime مناسب.</Text>
+        </View>
+      </View>
+      <Pressable style={styles.resetButton} onPress={onReset} accessibilityRole="button" accessibilityLabel="إعادة المشروع إلى القالب الأولي">
+        <Text style={styles.resetText}>إعادة المشروع إلى القالب الأولي</Text>
+      </Pressable>
+      <Text style={styles.version}>React IDE Mobile · v1.0 · Native workspace</Text>
+    </ScrollView>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -27,13 +53,9 @@ const styles = StyleSheet.create({
   title: { color: "#f3f7fc", fontSize: 22, fontWeight: "800", marginTop: 3 },
   subtitle: { color: "#7f8ea5", fontSize: 11, lineHeight: 18, marginTop: 5 },
   card: { borderRadius: 15, borderWidth: 1, borderColor: "#233043", backgroundColor: "#111823", overflow: "hidden" },
-  row: { minHeight: 70, paddingHorizontal: 14, paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 12, borderBottomWidth: 1, borderBottomColor: "#1d2939" },
+  row: { minHeight: 70, paddingHorizontal: 14, paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 12 },
   rowTitle: { color: "#dbe3ee", fontWeight: "700", fontSize: 13 },
   rowBody: { color: "#718098", fontSize: 10, lineHeight: 15, marginTop: 4 },
-  switch: { width: 42, height: 25, borderRadius: 15, backgroundColor: "#2b3a50", padding: 3, justifyContent: "center" },
-  switchOn: { backgroundColor: "#61dafb" },
-  knob: { width: 19, height: 19, borderRadius: 10, backgroundColor: "#a9b6c8" },
-  knobOn: { alignSelf: "flex-end", backgroundColor: "#04222e" },
   stepper: { flexDirection: "row", alignItems: "center", gap: 9 },
   step: { color: "#61dafb", fontSize: 23, fontWeight: "400" },
   fontValue: { color: "#f3f7fc", fontFamily: "monospace", fontSize: 14, width: 27, textAlign: "center" },

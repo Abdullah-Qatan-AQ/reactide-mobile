@@ -1,0 +1,1539 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#0b0f16"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-title" content="React IDE"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<title>React IDE — بيئة تطوير React على الهاتف</title>
+<style>
+:root{
+  --bg:#0b0f16; --bg2:#111823; --bg3:#18212e; --bg4:#1e2938; --line:#233043; --line2:#2d3d54;
+  --txt:#dbe3ee; --dim:#8b98ab; --dim2:#64738a;
+  --accent:#61dafb; --accent2:#7c8cff; --accentInk:#04222e;
+  --ok:#3fb950; --warn:#d29922; --err:#f85149;
+  --mono:"SF Mono",Menlo,Consolas,"Roboto Mono","Courier New",monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Tahoma,"Noto Kufi Arabic",Arial,sans-serif;
+  --codeFont:13px; --codeLH:1.65;
+  --tap:44px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:14px;
+  display:flex;flex-direction:column;overflow:hidden;overscroll-behavior:none;
+  height:var(--app-h,100dvh);
+}
+body.light{
+  --bg:#f4f7fb;--bg2:#ffffff;--bg3:#eef2f8;--bg4:#e4ebf4;--line:#dde4ee;--line2:#c9d4e2;
+  --txt:#16202c;--dim:#5d6b82;--dim2:#8b97a8;--accent:#0b8ec6;--accent2:#4c5bd4;--accentInk:#ffffff;
+}
+button{font-family:inherit;font-size:14px;color:inherit;background:none;border:none;cursor:pointer}
+input,select{font-family:inherit;font-size:15px}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:#2b3a50;border-radius:6px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ============ الشريط العلوي ============ */
+.topbar{
+  display:flex;align-items:center;gap:8px;padding:8px 10px;
+  background:linear-gradient(180deg,#151d2a,#0f151f);border-bottom:1px solid var(--line);
+  padding-top:max(8px,env(safe-area-inset-top));flex:0 0 auto;z-index:20;min-height:56px;
+}
+body.light .topbar{background:linear-gradient(180deg,#fff,#f3f6fa)}
+.brand{display:flex;align-items:center;gap:7px;font-weight:700;font-size:14px;white-space:nowrap;padding:6px 10px;border-radius:11px;background:var(--bg3);border:1px solid var(--line)}
+.brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+.brand small{font-weight:500;color:var(--dim);font-size:11px}
+.spacer{flex:1}
+.tbtn{
+  min-width:var(--tap);height:var(--tap);padding:0 12px;border-radius:12px;border:1px solid var(--line);
+  background:var(--bg3);color:var(--txt);display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  font-size:14px;transition:transform .08s,background .15s;
+}
+.tbtn:active{transform:scale(.93);background:var(--bg4)}
+.tbtn.on{background:var(--accent);color:var(--accentInk);border-color:transparent}
+.run{
+  min-height:var(--tap);padding:0 16px;border-radius:13px;font-weight:700;color:var(--accentInk);
+  background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;
+  box-shadow:0 4px 16px rgba(97,218,251,.28);display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  font-size:14px;transition:transform .08s;
+}
+.run:active{transform:scale(.94)}
+.run.busy{opacity:.55}
+.run .spin{display:inline-block;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* ============ التخطيط ============ */
+.work{flex:1;min-height:0;min-width:0;position:relative;display:flex;overflow:hidden}
+.pane{flex:1;min-height:0;min-width:0;display:none;flex-direction:column;overflow:hidden}
+.pane.active{display:flex}
+body.wide .work{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:1fr}
+body.wide #paneCode,body.wide #panePreview{display:flex}
+body.wide .tabbar{display:none}
+body.wide #paneCode{border-left:1px solid var(--line)}
+
+/* ============ المحرر ============ */
+.toolbar{
+  display:flex;align-items:center;gap:6px;background:var(--bg2);border-bottom:1px solid var(--line);
+  flex:0 0 auto;padding:6px 8px;overflow-x:auto;scrollbar-width:none;min-height:52px;
+}
+.toolbar::-webkit-scrollbar{display:none}
+.tgroup{display:flex;align-items:center;gap:4px;flex:0 0 auto}
+.tgroup.right{margin-inline-start:auto}
+.tb{
+  height:38px;min-width:38px;padding:0 9px;border-radius:10px;border:1px solid var(--line);
+  background:var(--bg3);color:var(--txt);display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  font-size:13px;transition:transform .08s,background .15s;
+}
+.tb:active{transform:scale(.92);background:var(--bg4)}
+.tb.on{background:var(--accent);color:var(--accentInk);border-color:transparent}
+.tb[disabled]{opacity:.35}
+.tb small{font-size:11px;opacity:.7}
+.ed-head{display:flex;align-items:center;gap:6px;background:var(--bg2);border-top:1px solid var(--line);overflow-x:auto;flex:0 0 auto;padding:5px 8px;scrollbar-width:none}
+.ed-head::-webkit-scrollbar{display:none}
+.ftab{
+  padding:7px 11px;border-radius:10px;white-space:nowrap;font-size:12px;color:var(--dim);
+  display:inline-flex;align-items:center;gap:7px;border:1px solid transparent;font-family:var(--mono);height:34px;
+}
+.ftab.sel{background:var(--bg4);color:var(--txt);border-color:var(--line2)}
+.ftab .x{opacity:.55;font-size:15px;line-height:1;padding:4px 6px;margin:-4px -2px}
+.ftab .x:active{opacity:1}
+.ed-wrap{flex:1;min-height:0;min-width:0;display:flex;direction:ltr;background:var(--bg);position:relative;overflow:hidden}
+.gutter{
+  order:2;flex:0 0 auto;padding:12px 8px 12px 10px;text-align:right;font-family:var(--mono);
+  font-size:calc(var(--codeFont) - 1px);line-height:var(--codeLH);color:#3f4d61;background:var(--bg2);
+  border-left:1px solid var(--line);overflow:hidden;user-select:none;min-width:42px;
+}
+body.light .gutter{background:#f0f4f9;color:#9aa7b9}
+.gutter div{height:calc(var(--codeFont) * var(--codeLH));padding-right:2px}
+.gutter div.err{color:var(--err);font-weight:700;background:rgba(248,81,73,.16);border-radius:4px}
+.ed-wrap.wrap .gutter{padding-top:12px}
+.code-area{flex:1;min-height:0;min-width:0;position:relative;overflow:hidden}
+.hl,.code-area textarea{
+  font-family:var(--mono);font-size:var(--codeFont);line-height:var(--codeLH);tab-size:2;
+  padding:12px 14px;margin:0;border:0;white-space:pre;
+}
+.ed-wrap.wrap .hl,.ed-wrap.wrap .code-area textarea{white-space:pre-wrap;overflow-wrap:anywhere}
+.hl{position:absolute;top:0;left:0;pointer-events:none;color:#c9d3e0;z-index:1;min-width:100%;width:max-content}
+.ed-wrap.wrap .hl{width:100%;min-width:100%}
+.code-area textarea{
+  position:absolute;inset:0;width:100%;height:100%;resize:none;outline:none;
+  background:transparent;color:transparent;caret-color:var(--accent);z-index:2;overflow:auto;
+  -webkit-text-size-adjust:none;
+}
+body.light .hl{color:#22303f}
+.t-cm{color:#5c6c80;font-style:italic} body.light .t-cm{color:#7d8a9b}
+.t-str{color:#9ecbff} body.light .t-str{color:#0a66c2}
+.t-kw{color:#ff7b72} body.light .t-kw{color:#c22}
+.t-tag{color:#7ee787} body.light .t-tag{color:#1a7f37}
+.t-num{color:#f0b072} body.light .t-num{color:#b45309}
+.t-fn{color:#d2a8ff} body.light .t-fn{color:#6f42c1}
+.t-prop{color:#79c0ff} body.light .t-prop{color:#0550ae}
+.statusbar{
+  flex:0 0 auto;display:flex;align-items:center;gap:14px;padding:6px 10px;font-size:11px;color:var(--dim);
+  background:var(--bg2);border-top:1px solid var(--line);font-family:var(--mono);overflow-x:auto;white-space:nowrap;
+}
+.statusbar span{flex:0 0 auto}
+.statusbar .ok{color:var(--ok)} .statusbar .err{color:var(--err)}
+
+/* ============ المعاينة ============ */
+.pv-head{display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg2);border-bottom:1px solid var(--line);flex:0 0 auto;flex-wrap:wrap}
+.seg{display:inline-flex;background:var(--bg3);border:1px solid var(--line);border-radius:12px;overflow:hidden;flex:0 0 auto}
+.seg button{padding:0 10px;height:36px;font-size:12px;color:var(--dim);border-inline-end:1px solid var(--line)}
+.seg button:last-child{border-inline-end:none}
+.seg button.on{background:var(--accent);color:var(--accentInk);font-weight:700}
+.chip{
+  height:36px;padding:0 12px;border-radius:11px;border:1px solid var(--line);background:var(--bg3);color:var(--dim);
+  display:inline-flex;align-items:center;gap:6px;font-size:12px;
+}
+.chip.on{background:rgba(97,218,251,.16);color:var(--accent);border-color:var(--accent)}
+.chip:active{transform:scale(.94)}
+.stage{flex:1;min-height:0;min-width:0;overflow:auto;display:flex;align-items:center;justify-content:center;padding:14px;
+  background:radial-gradient(circle at 50% 0%,rgba(97,218,251,.08),transparent 60%),var(--bg)}
+.devwrap{position:relative;direction:ltr;border-radius:24px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.5);border:7px solid #1b2432;background:#000;flex:0 0 auto}
+body.light .devwrap{border-color:#c9d3e0}
+.devwrap iframe{position:absolute;top:0;left:0;border:0;display:block;background:#fff}
+.pv-hint{font-size:11px;color:var(--dim2);text-align:center;padding:6px 0 0;direction:rtl}
+.pv-hint span{direction:ltr;display:inline-block}
+body.fs-preview .pv-head,body.fs-preview .tabbar{display:none}
+.fs-exit{
+  display:none;position:absolute;top:calc(10px + env(safe-area-inset-top));inset-inline-end:12px;z-index:6;
+  width:42px;height:42px;border-radius:50%;background:rgba(12,18,28,.72);color:#e6edf6;border:1px solid rgba(255,255,255,.18);
+  font-size:16px;align-items:center;justify-content:center;backdrop-filter:blur(6px);
+}
+body.fs-preview .fs-exit{display:inline-flex}
+body.fs-preview #panePreview{position:fixed;inset:0;z-index:70;background:var(--bg)}
+body.fs-preview .stage{padding:8px}
+
+/* ============ السجل ============ */
+.con-head{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border-bottom:1px solid var(--line);flex:0 0 auto;min-height:52px}
+.con-list{flex:1;min-height:0;overflow:auto;padding:8px;font-family:var(--mono);font-size:12px}
+.log{
+  border:1px solid var(--line);padding:9px 10px;border-radius:10px;margin-bottom:6px;white-space:pre-wrap;
+  word-break:break-word;background:var(--bg3);line-height:1.5;position:relative;
+}
+.log .lv{font-weight:700;margin-inline-end:7px;font-size:10px;padding:2px 6px;border-radius:6px;background:rgba(255,255,255,.08)}
+.log .ts{color:var(--dim2);font-size:10px;margin-inline-start:6px;float:left}
+.log .msg{unicode-bidi:plaintext}
+.log.error{background:rgba(248,81,73,.1);border-color:rgba(248,81,73,.35);color:#ffb4ae}
+.log.error .lv{background:rgba(248,81,73,.25);color:#ffb4ae}
+body.light .log.error{color:#a4231c}
+.log.warn{background:rgba(210,153,34,.1);border-color:rgba(210,153,34,.3);color:#e3b341}
+body.light .log.warn{color:#8a6100}
+.log.info{color:#8fc7ff} body.light .log.info{color:#0a66c2}
+.log.clickable{cursor:pointer}
+.log.clickable:active{transform:scale(.99)}
+.log .hint{display:block;margin-top:5px;font-size:10px;color:var(--dim2)}
+
+/* ============ الملفات ============ */
+.files{padding:10px;overflow:auto;flex:1;min-height:0}
+.file-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;border:1px solid var(--line);background:var(--bg2);margin-bottom:8px}
+.file-row.active{border-color:var(--accent);background:var(--bg3)}
+.file-row .nm{flex:1;font-family:var(--mono);font-size:13px;direction:ltr;text-align:left;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-row .sz{color:var(--dim2);font-size:11px;flex:0 0 auto}
+.frow-actions{display:flex;gap:6px;flex:0 0 auto}
+.mini{
+  min-width:40px;height:38px;padding:0 10px;border-radius:11px;border:1px solid var(--line);background:var(--bg3);
+  font-size:12px;display:inline-flex;align-items:center;justify-content:center;
+}
+.mini:active{transform:scale(.92)}
+.mini.danger{color:var(--err);border-color:rgba(248,81,73,.35)}
+
+/* ============ شريط التبويب ============ */
+.tabbar{
+  flex:0 0 auto;display:flex;background:var(--bg2);border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.tabbar button{
+  flex:1;min-height:58px;padding:8px 2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  font-size:10px;color:var(--dim);position:relative;
+}
+.tabbar button .ic{font-size:19px;line-height:1}
+.tabbar button.on{color:var(--accent)}
+.tabbar button:active{background:var(--bg3)}
+.tabbar .badge{
+  position:absolute;top:4px;inset-inline-start:calc(50% - 22px);background:var(--err);color:#fff;
+  border-radius:9px;font-size:9px;padding:1px 5px;min-width:16px;text-align:center;
+}
+
+/* ============ اللوحات المنبثقة ============ */
+.overlay{position:fixed;inset:0;background:rgba(3,7,12,.6);backdrop-filter:blur(4px);display:none;z-index:80;align-items:flex-end}
+.overlay.on{display:flex}
+.sheet{
+  width:100%;background:var(--bg2);border-top:1px solid var(--line);border-radius:20px 20px 0 0;
+  max-height:88vh;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom);
+  animation:up .22s ease-out;
+}
+@keyframes up{from{transform:translateY(18px);opacity:.6}to{transform:none;opacity:1}}
+.sheet-head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);font-weight:700;font-size:15px;flex:0 0 auto}
+.sheet-body{padding:14px 16px;overflow:auto;flex:1;min-height:0}
+.sheet-body .row{display:flex;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.sheet-body .row:last-child{border-bottom:none}
+.sheet-body .row .lbl{flex:1;font-size:14px}
+.sheet-body .row .lbl small{display:block;color:var(--dim2);font-size:11px;margin-top:2px}
+.sheet-actions{display:flex;gap:10px;padding-top:14px}
+.sheet-btn{
+  flex:1;min-height:46px;border-radius:13px;border:1px solid var(--line);background:var(--bg3);font-size:14px;font-weight:600;
+}
+.sheet-btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--accentInk);border-color:transparent}
+.sheet-btn.danger{color:var(--err);border-color:rgba(248,81,73,.4)}
+.sheet-btn:active{transform:scale(.97)}
+.sheet-input{
+  width:100%;background:var(--bg3);border:1px solid var(--line);color:var(--txt);border-radius:12px;padding:12px 14px;
+  outline:none;font-size:16px;margin-top:6px;
+}
+.sheet-input:focus{border-color:var(--accent)}
+.sheet-note{font-size:12px;color:var(--dim);line-height:1.7;margin:4px 0 0}
+.toast{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:92px;background:#132033;color:#e6edf6;border:1px solid var(--line2);
+  padding:12px 18px;border-radius:13px;font-size:13px;z-index:90;opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;
+  box-shadow:0 10px 34px rgba(0,0,0,.5);max-width:90vw;text-align:center;
+}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(-4px)}
+.help p{margin:9px 0;line-height:1.8;color:var(--dim)} .help b{color:var(--txt)}
+.help code{font-family:var(--mono);background:var(--bg4);border-radius:6px;padding:1px 6px;font-size:12px;color:var(--accent)}
+.list-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.list-row:last-child{border-bottom:none}
+.list-row .lbl{flex:1;font-size:14px}
+.list-row .lbl small{display:block;color:var(--dim2);font-size:11px;margin-top:3px}
+
+@media (max-width: 899px){
+  #btnFiles,#btnConsole{display:none}
+  .brand small{display:none}
+  .brand{padding:6px 9px;font-size:13px}
+  .topbar{gap:6px;padding:7px 8px}
+  .tbtn{padding:0 10px}
+  .run{padding:0 13px;font-size:13px}
+  .seg button{padding:0 9px;font-size:11px}
+}
+@media (min-width: 900px){
+  .pv-head{flex-wrap:nowrap}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="dot"></span> React IDE <small>للهاتف</small></div>
+  <div class="spacer"></div>
+  <button class="tbtn" id="btnFiles" title="الملفات" aria-label="الملفات">📁</button>
+  <button class="tbtn" id="btnConsole" title="السجل" aria-label="سجل المخرجات">🧪</button>
+  <button class="tbtn" id="btnTheme" title="المظهر" aria-label="تبديل المظهر">🌓</button>
+  <button class="tbtn" id="btnMenu" title="القائمة" aria-label="القائمة">⋮</button>
+  <button class="run" id="btnRun" aria-label="تشغيل الكود"><span id="runIcon">▶</span> <span id="runText">تشغيل</span></button>
+</header>
+
+<main class="work" id="work">
+  <!-- ============ المحرر ============ -->
+  <section class="pane" id="paneCode">
+    <div class="toolbar">
+      <div class="tgroup">
+        <button class="tb" id="btnUndo" title="تراجع (Ctrl+Z)" aria-label="تراجع">↶</button>
+        <button class="tb" id="btnRedo" title="إعادة (Ctrl+Y)" aria-label="إعادة">↷</button>
+      </div>
+      <div class="tgroup">
+        <button class="tb" id="btnFontDown" title="تصغير الخط" aria-label="تصغير الخط">A−</button>
+        <button class="tb" id="btnFontUp" title="تكبير الخط" aria-label="تكبير الخط">A+</button>
+        <button class="tb" id="btnWrap" title="لف الأسطر الطويلة" aria-label="لف الأسطر">↩</button>
+      </div>
+      <div class="tgroup right">
+        <button class="tb" id="btnCopy" title="نسخ الكود" aria-label="نسخ الكود">📋</button>
+        <button class="tb" id="btnSave" title="حفظ (Ctrl+S)" aria-label="حفظ">💾</button>
+      </div>
+    </div>
+    <div class="ed-head" id="fileTabs"></div>
+    <div class="ed-wrap" id="edWrap">
+      <div class="gutter" id="gutter"></div>
+      <div class="code-area">
+        <pre class="hl" id="hl"></pre>
+        <textarea id="code" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off" enterkeyhint="enter" dir="ltr"></textarea>
+      </div>
+    </div>
+    <div class="statusbar">
+      <span id="stFile">App.jsx</span>
+      <span id="stPos">سطر 1، عمود 1</span>
+      <span id="stSize">0</span>
+      <span id="stSave">—</span>
+      <span class="spacer"></span>
+      <span id="stState" class="ok">● جاهز</span>
+    </div>
+  </section>
+
+  <!-- ============ المعاينة ============ -->
+  <section class="pane" id="panePreview">
+    <div class="pv-head">
+      <div class="tgroup">
+        <button class="chip" id="btnAuto" aria-label="التشغيل التلقائي">⚡ تلقائي</button>
+        <button class="tb" id="btnRotate" title="تدوير" aria-label="تدوير الجهاز">🔄</button>
+        <button class="tb" id="btnReload" title="تحديث" aria-label="تحديث المعاينة">⟳</button>
+        <button class="tb" id="btnFull" title="ملء الشاشة" aria-label="ملء الشاشة">⛶</button>
+        <button class="tb" id="btnPop" title="نافذة مستقلة" aria-label="فتح في نافذة">↗</button>
+      </div>
+      <div class="tgroup right">
+        <div class="seg" id="devSeg">
+          <button data-dev="small" title="360×640">360</button>
+          <button data-dev="phone" title="390×844">390</button>
+          <button data-dev="tall" title="412×915">412</button>
+          <button data-dev="tablet" title="768×1024">768</button>
+          <button data-dev="desktop" title="1280×800">1280</button>
+        </div>
+      </div>
+    </div>
+    <div class="stage" id="stage">
+      <div>
+        <div class="devwrap" id="devwrap"><iframe id="frame" title="preview"></iframe></div>
+        <div class="pv-hint" id="pvHint">360×640 بكسل</div>
+      </div>
+      <button class="fs-exit" id="btnFsExit" aria-label="خروج من ملء الشاشة">✕</button>
+    </div>
+  </section>
+
+  <!-- ============ السجل ============ -->
+  <section class="pane" id="paneConsole">
+    <div class="con-head">
+      <b style="font-size:14px">سجل المخرجات</b>
+      <span class="spacer"></span>
+      <button class="mini" id="btnClear">🗑 مسح</button>
+    </div>
+    <div class="con-list" id="conList"></div>
+  </section>
+
+  <!-- ============ الملفات ============ -->
+  <section class="pane" id="paneFiles">
+    <div class="con-head">
+      <b style="font-size:14px">ملفات المشروع</b>
+      <span class="spacer"></span>
+      <button class="mini" id="btnAddFile">＋ ملف</button>
+      <button class="mini" id="btnTpl">◈ قالب</button>
+    </div>
+    <div class="files" id="filesList"></div>
+  </section>
+</main>
+
+<nav class="tabbar">
+  <button data-tab="code" class="on"><span class="ic">📝</span>الكود</button>
+  <button data-tab="preview"><span class="ic">📱</span>المعاينة</button>
+  <button data-tab="console"><span class="ic">🧪</span>السجل<span class="badge" id="errBadge" style="display:none">0</span></button>
+  <button data-tab="files"><span class="ic">📁</span>الملفات</button>
+</nav>
+
+<div class="overlay" id="overlay"><div class="sheet">
+  <div class="sheet-head"><span id="sheetTitle">القائمة</span><span class="spacer"></span><button class="tb" id="sheetClose" aria-label="إغلاق">✕</button></div>
+  <div class="sheet-body" id="sheetBody"></div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<script>
+"use strict";
+/* ============================================================
+   React IDE — بيئة تطوير React تعمل بالكامل داخل المتصفح
+   ============================================================ */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const LS = 'reactide.v3';
+
+/* ---------------- الحالة ---------------- */
+const DEVICES = {
+  small:{w:360,h:640}, phone:{w:390,h:844}, tall:{w:412,h:915},
+  tablet:{w:768,h:1024}, desktop:{w:1280,h:800}
+};
+const state = {
+  fs:{}, order:[], active:'App.jsx', tabs:['App.jsx'],
+  logs:[], errCount:0, device:'small', orient:'portrait',
+  autoRun:true, theme:'dark', codeFont:13, wrap:null,
+  blob:null, errorLine:null, custom:{}, undo:[], redo:[]
+};
+const DEFAULTS = { fs:{}, order:[], active:'App.jsx', tabs:['App.jsx'], theme:'dark', codeFont:13, wrap:null, custom:{} };
+
+/* ---------------- القوالب ---------------- */
+const TPL = {
+  counter:{ name:'عدّاد تفاعلي', files:{
+    'App.jsx':`function App() {
+  const [count, setCount] = React.useState(0);
+  const [step, setStep] = React.useState(1);
+
+  return (
+    <div className="app">
+      <h1>العدّاد</h1>
+      <div className="num">{count}</div>
+      <div className="row">
+        <button className="ghost" onClick={() => setCount(count - step)}>-</button>
+        <button className="ghost" onClick={() => setCount(count + step)}>+</button>
+        <button className="ghost" onClick={() => setCount(0)}>تصفير</button>
+      </div>
+      <label>
+        مقدار الخطوة
+        <input type="number" value={step} onChange={e => setStep(Number(e.target.value) || 1)} />
+      </label>
+    </div>
+  );
+}
+`,
+    'styles.css':`.app{padding:24px;text-align:center;font-family:system-ui;background:#0f172a;color:#e2e8f0;min-height:100vh}
+h1{font-size:20px;margin:0 0 12px}
+.num{font-size:64px;font-weight:800;color:#38bdf8;margin:16px 0}
+.row{display:flex;gap:10px;justify-content:center;margin-bottom:20px}
+button{padding:12px 20px;border-radius:12px;border:0;font-size:16px;cursor:pointer}
+button.ghost{background:#1e293b;color:#e2e8f0}
+label{display:block;font-size:13px;color:#94a3b8}
+input{margin:8px auto;display:block;padding:8px;width:120px;text-align:center;background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px}
+`}},
+  todo:{ name:'قائمة مهام', files:{
+    'App.jsx':`function App() {
+  const [items, setItems] = React.useState([
+    { id: 1, text: 'تعلّم React', done: false },
+    { id: 2, text: 'اكتب تطبيقًا', done: true }
+  ]);
+  const [text, setText] = React.useState('');
+
+  function add(e) {
+    e.preventDefault();
+    if (!text.trim()) return;
+    setItems([...items, { id: Date.now(), text, done: false }]);
+    setText('');
+  }
+  function toggle(id) {
+    setItems(items.map(i => i.id === id ? { ...i, done: !i.done } : i));
+  }
+  function remove(id) {
+    setItems(items.filter(i => i.id !== id));
+  }
+  const left = items.filter(i => !i.done).length;
+
+  return (
+    <div className="app">
+      <h1>مهامك <span className="badge">{left}</span></h1>
+      <form onSubmit={add} className="add">
+        <input value={text} onChange={e => setText(e.target.value)} placeholder="مهمة جديدة..." />
+        <button type="submit">إضافة</button>
+      </form>
+      <ul>
+        {items.map(i => (
+          <li key={i.id} className={i.done ? 'done' : ''}>
+            <span onClick={() => toggle(i.id)}>{i.text}</span>
+            <button className="del" onClick={() => remove(i.id)}>✕</button>
+          </li>
+        ))}
+      </ul>
+      {items.length === 0 && <p className="empty">لا مهام بعد ✨</p>}
+    </div>
+  );
+}
+`,
+    'styles.css':`.app{padding:20px;font-family:system-ui;background:#f8fafc;color:#0f172a;min-height:100vh}
+h1{font-size:20px;display:flex;align-items:center;gap:10px}
+.badge{background:#38bdf8;color:#04222e;border-radius:9px;padding:2px 8px;font-size:12px}
+.add{display:flex;gap:8px;margin:16px 0}
+.add input{flex:1;padding:11px;border-radius:10px;border:1px solid #cbd5e1;background:#fff}
+.add button{padding:11px 16px;border-radius:10px;border:0;background:#0ea5e9;color:#fff;font-weight:700}
+ul{list-style:none;padding:0;margin:0}
+li{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:8px}
+li span{flex:1;cursor:pointer}
+li.done span{text-decoration:line-through;color:#94a3b8}
+.del{border:0;background:#fee2e2;color:#dc2626;border-radius:8px;width:30px;height:30px}
+.empty{text-align:center;color:#94a3b8}
+`}},
+  cards:{ name:'بطاقات (Props)', files:{
+    'App.jsx':`const Card = ({ title, color, children }) => (
+  <div className="card" style={{ borderTopColor: color }}>
+    <h3 style={{ color: color }}>{title}</h3>
+    <div>{children}</div>
+  </div>
+);
+
+function App() {
+  const [n, setN] = React.useState(0);
+  const cards = [
+    { title: 'سرعة', color: '#f97316', text: 'مكوّنات صغيرة وفعّالة.' },
+    { title: 'مرونة', color: '#22c55e', text: 'مراحل بناء واضحة.' },
+    { title: 'تفاعل', color: '#a855f7', text: 'حالة وتحديثات فورية.' }
+  ];
+  return (
+    <div className="app">
+      <h1>بطاقات</h1>
+      <div className="grid">
+        {cards.map((c, i) => (
+          <Card key={i} title={c.title} color={c.color}>{c.text}</Card>
+        ))}
+      </div>
+      <button className="btn" onClick={() => setN(n + 1)}>تم الضغط {n} مرة</button>
+    </div>
+  );
+}
+`,
+    'styles.css':`.app{padding:20px;font-family:system-ui;background:#0b1120;color:#e2e8f0;min-height:100vh}
+h1{font-size:20px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
+.card{background:#111c33;border:1px solid #1e293b;border-top:4px solid #38bdf8;border-radius:12px;padding:14px}
+.card h3{margin:0 0 8px;font-size:15px}
+.card div{font-size:13px;color:#94a3b8;line-height:1.6}
+.btn{padding:11px 18px;border-radius:10px;border:0;background:#38bdf8;color:#04222e;font-weight:700}
+`}},
+  search:{ name:'بحث فوري', files:{
+    'App.jsx':`const DATA = ['React', 'React Native', 'Redux', 'Router', 'Recharts', 'Relay'];
+
+function App() {
+  const [q, setQ] = React.useState('');
+  const res = DATA.filter(d => d.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <div className="app">
+      <h1>🔎 بحث</h1>
+      <input className="search" value={q} onChange={e => setQ(e.target.value)} placeholder="اكتب هنا..." />
+      <ul>
+        {res.map(r => <li key={r}>{r}</li>)}
+        {res.length === 0 && <li className="none">لا نتائج</li>}
+      </ul>
+      <p className="count">{res.length} نتيجة</p>
+    </div>
+  );
+}
+`,
+    'styles.css':`.app{padding:20px;font-family:system-ui;background:#fff;min-height:100vh}
+h1{font-size:20px;color:#0f172a}
+.search{width:100%;padding:13px;border-radius:12px;border:1px solid #cbd5e1;font-size:15px;box-sizing:border-box}
+ul{list-style:none;padding:0;margin:14px 0}
+li{padding:12px 14px;border-bottom:1px solid #e2e8f0;color:#0f172a}
+li.none{color:#94a3b8;text-align:center;border:none}
+.count{color:#94a3b8;font-size:13px}
+`}}
+};
+
+/* ---------------- أدوات ---------------- */
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function blank(t){ return t.replace(/[^\n]/g,' '); }
+let toastTimer = null;
+function toast(msg){
+  const t = $('#toast');
+  t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('on'), 2000);
+}
+function save(){
+  try{
+    localStorage.setItem(LS, JSON.stringify({
+      fs:state.fs, order:state.order, tabs:state.tabs, active:state.active,
+      theme:state.theme, codeFont:state.codeFont, wrap:state.wrap, custom:state.custom
+    }));
+    const d = new Date();
+    $('#stSave').textContent = 'حُفظ ' + d.toTimeString().slice(0,5);
+  }catch(e){ $('#stSave').textContent = 'تعذّر الحفظ'; }
+}
+let saveTimer = null;
+function saveSoon(){ clearTimeout(saveTimer); saveTimer = setTimeout(save, 600); }
+function load(){
+  try{
+    const raw = localStorage.getItem(LS);
+    if(!raw) return false;
+    const d = JSON.parse(raw);
+    if(!d || !d.fs || !d.fs['App.jsx']) return false;
+    const norm = {};
+    Object.keys(d.fs).forEach(n => { const v = d.fs[n]; norm[n] = (typeof v === 'string') ? { content:v } : v; });
+    state.fs = norm;
+    state.order = (d.order && d.order.length) ? d.order.filter(n => norm[n]) : Object.keys(norm);
+    state.tabs = (d.tabs && d.tabs.length) ? d.tabs.filter(n => norm[n]) : ['App.jsx'];
+    state.active = norm[d.active] ? d.active : state.order[0];
+    state.custom = d.custom || {};
+    state.codeFont = d.codeFont || 13;
+    state.wrap = (d.wrap === null || d.wrap === undefined) ? null : !!d.wrap;
+    if(d.theme === 'light') setTheme('light', true);
+    return true;
+  }catch(e){ return false; }
+}
+function setTheme(t, skipSave){
+  state.theme = t;
+  document.body.classList.toggle('light', t === 'light');
+  if(!skipSave) save();
+}
+
+/* ---------------- اللوحات المنبثقة ---------------- */
+const overlay = $('#overlay');
+let sheetResolve = null;
+function closeSheet(val){
+  overlay.classList.remove('on');
+  const r = sheetResolve; sheetResolve = null;
+  if(r) r(val);
+}
+function openSheet(title, contentHTML, buttons){
+  if(sheetResolve) closeSheet(null);
+  $('#sheetTitle').textContent = title;
+  $('#sheetBody').innerHTML = contentHTML + '<div class="sheet-actions" id="sheetActions"></div>';
+  const acts = $('#sheetActions');
+  (buttons || [{label:'إغلاق', value:null}]).forEach(b => {
+    const btn = document.createElement('button');
+    btn.className = 'sheet-btn' + (b.primary ? ' primary' : '') + (b.danger ? ' danger' : '');
+    btn.textContent = b.label;
+    btn.onclick = () => {
+      let val = b.value;
+      const inp = $('#sheetInput');
+      if(b.readInput && inp) val = inp.value.trim();
+      closeSheet(val);
+    };
+    acts.appendChild(btn);
+  });
+  overlay.classList.add('on');
+  return new Promise(res => { sheetResolve = res; });
+}
+function askText(title, opts){
+  opts = opts || {};
+  return openSheet(title,
+    '<p class="sheet-note">' + (opts.note || '') + '</p>' +
+    '<input class="sheet-input" id="sheetInput" type="text" inputmode="' + (opts.inputmode || 'text') + '" placeholder="' + (opts.placeholder || '') + '" value="' + esc(opts.value || '') + '">',
+    [{label:opts.cancel || 'إلغاء', value:null},{label:opts.ok || 'حفظ', value:'__ok', primary:true, readInput:true}]
+  ).then(v => (v === null || v === undefined) ? null : String(v).trim());
+}
+function askConfirm(title, msg, okLabel){
+  return openSheet(title, '<p class="sheet-note">' + esc(msg) + '</p>',
+    [{label:'إلغاء', value:false},{label:okLabel || 'تأكيد', value:true, primary:true}]).then(v => v === true);
+}
+$('#sheetClose').onclick = () => closeSheet(null);
+overlay.onclick = e => { if(e.target === overlay) closeSheet(null); };
+
+/* ---------------- تظليل بناء الجملة ---------------- */
+const KEYWORDS = new Set(('import export default from const let var function return if else for while do switch case break continue new class extends super this typeof instanceof in of delete void await async try catch finally throw yield static true false null undefined NaN').split(' '));
+const TOKEN_RE = /(\/\*[\s\S]*?\*\/|\/\/[^\n]*)|(`(?:\\[\s\S]|[^`\\])*`|'(?:\\[\s\S]|[^'\\])*'|"(?:\\[\s\S]|[^"\\])*")|(<\/?[A-Za-z][\w.]*|\/?>)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_$][\w$]*)/g;
+function highlight(code){
+  let out = '', last = 0, m;
+  TOKEN_RE.lastIndex = 0;
+  while((m = TOKEN_RE.exec(code)) !== null){
+    out += esc(code.slice(last, m.index));
+    last = m.index + m[0].length;
+    const t = m[0];
+    if(m[1]) out += '<span class="t-cm">' + esc(t) + '</span>';
+    else if(m[2]) out += '<span class="t-str">' + esc(t) + '</span>';
+    else if(m[3]) out += '<span class="t-tag">' + esc(t) + '</span>';
+    else if(m[4]) out += '<span class="t-num">' + esc(t) + '</span>';
+    else {
+      const after = code.slice(m.index + m[0].length).match(/^\s*\(/);
+      if(KEYWORDS.has(t)) out += '<span class="t-kw">' + esc(t) + '</span>';
+      else if(after) out += '<span class="t-fn">' + esc(t) + '</span>';
+      else if(code[m.index-1] === '.') out += '<span class="t-prop">' + esc(t) + '</span>';
+      else out += esc(t);
+    }
+  }
+  out += esc(code.slice(last));
+  return out;
+}
+
+/* ---------------- المحرر ---------------- */
+const codeEl = $('#code'), hlEl = $('#hl'), gutterEl = $('#gutter'), edWrap = $('#edWrap');
+let runTimer = null;
+
+function currentFile(){ return state.fs[state.active]; }
+
+function renderTabs(){
+  const box = $('#fileTabs'); box.innerHTML = '';
+  state.tabs.forEach(name => {
+    if(!state.fs[name]) return;
+    const b = document.createElement('button');
+    b.className = 'ftab' + (name === state.active ? ' sel' : '');
+    const icon = name.endsWith('.css') ? '🎨' : name.endsWith('.jsx') ? '⚛️' : '📄';
+    b.innerHTML = '<span>' + icon + ' ' + esc(name) + '</span>';
+    b.onclick = () => openFile(name);
+    const x = document.createElement('span');
+    x.className = 'x'; x.textContent = '×';
+    x.onclick = (e) => { e.stopPropagation(); closeFile(name); };
+    b.appendChild(x);
+    box.appendChild(b);
+  });
+}
+function openFile(name){
+  if(!state.fs[name]) return;
+  state.active = name;
+  if(!state.tabs.includes(name)) state.tabs.push(name);
+  loadIntoEditor(); renderTabs(); renderFiles(); saveSoon();
+}
+function closeFile(name){
+  state.tabs = state.tabs.filter(t => t !== name);
+  if(state.active === name) state.active = state.tabs[0] || state.order[0];
+  loadIntoEditor(); renderTabs(); renderFiles(); saveSoon();
+}
+function loadIntoEditor(){
+  const f = currentFile();
+  codeEl.value = f ? f.content : '';
+  codeEl.readOnly = !f;
+  $('#stFile').textContent = state.active;
+  renderCode();
+  updateStatus();
+}
+let measureEl = null;
+function measureRows(code){
+  // يحسب عدد الصفوف المرئية لكل سطر منطقي (عند لف الأسطر)
+  if(!measureEl){
+    measureEl = document.createElement('div');
+    measureEl.setAttribute('aria-hidden','true');
+    // يبقى داخل منطقة الكود (overflow:hidden) حتى لا يوسّع الصفحة أو يفسد التمرير
+    measureEl.style.cssText = 'position:absolute;top:0;left:0;visibility:hidden;white-space:pre-wrap;overflow-wrap:anywhere;pointer-events:none;z-index:-1';
+    document.querySelector('.code-area').appendChild(measureEl);
+  }
+  const area = document.querySelector('.code-area');
+  const cs = getComputedStyle(codeEl);
+  measureEl.style.width = Math.max(60, area.clientWidth) + 'px';
+  measureEl.style.fontFamily = cs.fontFamily;
+  measureEl.style.fontSize = cs.fontSize;
+  measureEl.style.fontWeight = cs.fontWeight;
+  measureEl.style.letterSpacing = cs.letterSpacing;
+  measureEl.style.lineHeight = cs.lineHeight;
+  measureEl.style.padding = cs.padding;
+  measureEl.textContent = code;
+  const node = measureEl.firstChild;
+  const lines = code.split('\n');
+  const rows = [];
+  let offset = 0;
+  for(let i = 0; i < lines.length; i++){
+    const start = offset, end = offset + lines[i].length;
+    let n = 1;
+    try{
+      const r = document.createRange();
+      r.setStart(node, Math.min(start, node.length));
+      r.setEnd(node, Math.min(end, node.length));
+      const rects = r.getClientRects();
+      if(rects.length){
+        let top = Infinity, bottom = -Infinity;
+        for(let k = 0; k < rects.length; k++){
+          if(rects[k].height > 0){ top = Math.min(top, rects[k].top); bottom = Math.max(bottom, rects[k].bottom); }
+        }
+        if(isFinite(top) && bottom > top){
+          const lh = parseFloat(getComputedStyle(codeEl).lineHeight) || (state.codeFont * 1.65);
+          n = Math.max(1, Math.round((bottom - top) / lh));
+        }
+      }
+    }catch(e){ n = 1; }
+    rows.push(n);
+    offset = end + 1;
+  }
+  return rows;
+}
+function renderCode(){
+  const code = codeEl.value;
+  hlEl.innerHTML = highlight(code) + '\n';
+  const lines = code.split('\n');
+  const lh = state.codeFont * 1.65;
+  const wrap = edWrap.classList.contains('wrap');
+  const rows = wrap ? measureRows(code) : lines.map(() => 1);
+  let g = '';
+  for(let i = 0; i < lines.length; i++){
+    const isErr = state.errorLine && state.errorLine.file === state.active && state.errorLine.line === (i + 1);
+    const r = rows[i] || 1;
+    g += '<div style="height:' + (r * lh) + 'px;' + (isErr ? 'background:rgba(248,81,73,.16);color:var(--err);font-weight:700;' : '') + '">' + (i + 1) + '</div>';
+  }
+  gutterEl.innerHTML = g;
+  syncScroll();
+  $('#stSize').textContent = code.length + ' حرف';
+}
+function syncScroll(){
+  hlEl.style.transform = 'translate(' + (-codeEl.scrollLeft) + 'px,' + (-codeEl.scrollTop) + 'px)';
+  gutterEl.style.transform = 'translateY(' + (-codeEl.scrollTop) + 'px)';
+}
+codeEl.addEventListener('scroll', syncScroll);
+codeEl.addEventListener('input', () => {
+  const f = currentFile(); if(!f) return;
+  state.undo.push(f.content); if(state.undo.length > 120) state.undo.shift();
+  state.redo.length = 0;
+  f.content = codeEl.value;
+  renderCode(); scheduleRun(); saveSoon(); updateUndoButtons();
+});
+codeEl.addEventListener('keyup', updateStatus);
+codeEl.addEventListener('click', updateStatus);
+codeEl.addEventListener('keydown', e => {
+  const meta = e.ctrlKey || e.metaKey;
+  if(meta && e.key === 'Enter'){ e.preventDefault(); run(); return; }
+  if(meta && e.key.toLowerCase() === 's'){ e.preventDefault(); save(); toast('تم الحفظ 💾'); return; }
+  if(meta && e.key.toLowerCase() === 'z' && !e.shiftKey){ e.preventDefault(); undo(); return; }
+  if((meta && e.key.toLowerCase() === 'y') || (meta && e.shiftKey && e.key.toLowerCase() === 'z')){ e.preventDefault(); redo(); return; }
+  if(meta && e.key.toLowerCase() === 'd'){ e.preventDefault(); duplicateLine(); return; }
+  if(e.key === 'Tab'){
+    e.preventDefault();
+    const s = codeEl.selectionStart, en = codeEl.selectionEnd;
+    if(s !== en && codeEl.value.slice(s,en).includes('\n')){
+      const start = codeEl.value.lastIndexOf('\n', s-1) + 1;
+      const block = codeEl.value.slice(start, en);
+      const nb = e.shiftKey ? block.replace(/^ {1,2}/gm,'') : block.replace(/^/gm,'  ');
+      replaceRange(start, en, nb, start, start + nb.length);
+    } else insert('  ');
+    onEdit(); return;
+  }
+  if(e.key === 'Enter'){
+    const s = codeEl.selectionStart;
+    const lineStart = codeEl.value.lastIndexOf('\n', s-1) + 1;
+    const line = codeEl.value.slice(lineStart, s);
+    const indent = (line.match(/^\s*/) || [''])[0];
+    const opens = /[{[(]\s*$/.test(line.trimEnd());
+    const nextCh = codeEl.value[s] || '';
+    e.preventDefault();
+    if(opens && nextCh === '}'){
+      const ins = '\n' + indent + '  ' + '\n' + indent;
+      replaceRange(s, s, ins, s + indent.length + 3, s + indent.length + 3);
+    } else {
+      insert('\n' + indent + (opens ? '  ' : ''));
+    }
+    onEdit(); return;
+  }
+  const pairs = {'(':')','[':']','{':'}','"':'"',"'":"'",'`':'`'};
+  if(pairs[e.key] && codeEl.selectionStart === codeEl.selectionEnd){
+    const next = codeEl.value[codeEl.selectionStart] || '';
+    if(!/[\w\s]/.test(next)){
+      e.preventDefault();
+      insert(e.key + pairs[e.key]);
+      codeEl.selectionStart = codeEl.selectionEnd = codeEl.selectionStart - 1;
+      onEdit(); return;
+    }
+  }
+});
+function insert(text){
+  const s = codeEl.selectionStart, en = codeEl.selectionEnd;
+  replaceRange(s, en, text, s + text.length, s + text.length);
+}
+function replaceRange(start, end, text, selStart, selEnd){
+  codeEl.value = codeEl.value.slice(0,start) + text + codeEl.value.slice(end);
+  codeEl.selectionStart = selStart; codeEl.selectionEnd = selEnd;
+}
+function onEdit(){
+  const f = currentFile(); if(f) f.content = codeEl.value;
+  renderCode(); scheduleRun(); saveSoon();
+}
+function updateStatus(){
+  const pos = codeEl.selectionStart || 0;
+  const before = codeEl.value.slice(0, pos);
+  const line = before.split('\n').length;
+  const col = pos - before.lastIndexOf('\n');
+  $('#stPos').textContent = 'سطر ' + line + '، عمود ' + col;
+}
+function undo(){
+  const f = currentFile(); if(!f || !state.undo.length) return;
+  state.redo.push(f.content);
+  f.content = state.undo.pop();
+  codeEl.value = f.content; renderCode(); scheduleRun(); saveSoon(); updateUndoButtons();
+}
+function redo(){
+  const f = currentFile(); if(!f || !state.redo.length) return;
+  state.undo.push(f.content);
+  f.content = state.redo.pop();
+  codeEl.value = f.content; renderCode(); scheduleRun(); saveSoon(); updateUndoButtons();
+}
+function updateUndoButtons(){
+  $('#btnUndo').disabled = !state.undo.length;
+  $('#btnRedo').disabled = !state.redo.length;
+}
+function duplicateLine(){
+  const pos = codeEl.selectionStart;
+  const start = codeEl.value.lastIndexOf('\n', pos-1) + 1;
+  let end = codeEl.value.indexOf('\n', pos);
+  if(end === -1) end = codeEl.value.length;
+  const line = codeEl.value.slice(start, end);
+  replaceRange(end, end, '\n' + line, end + 1 + line.length, end + 1 + line.length);
+  onEdit();
+}
+$('#btnUndo').onclick = undo;
+$('#btnRedo').onclick = redo;
+
+/* ---------------- حجم الخط ولف الأسطر ---------------- */
+function applyFont(){
+  document.documentElement.style.setProperty('--codeFont', state.codeFont + 'px');
+  $('#btnFontUp').disabled = state.codeFont >= 20;
+  $('#btnFontDown').disabled = state.codeFont <= 11;
+  saveSoon();
+}
+function applyWrap(){
+  const wrap = state.wrap === null ? window.innerWidth < 700 : state.wrap;
+  edWrap.classList.toggle('wrap', wrap);
+  $('#btnWrap').classList.toggle('on', wrap);
+  $('#btnWrap').title = wrap ? 'إلغاء لف الأسطر' : 'لف الأسطر الطويلة';
+}
+$('#btnFontUp').onclick = () => { state.codeFont = Math.min(20, state.codeFont + 1); applyFont(); renderCode(); };
+$('#btnFontDown').onclick = () => { state.codeFont = Math.max(11, state.codeFont - 1); applyFont(); renderCode(); };
+$('#btnWrap').onclick = () => { state.wrap = !(state.wrap === null ? window.innerWidth < 700 : state.wrap); applyWrap(); renderCode(); saveSoon(); };
+window.addEventListener('resize', () => { setTimeout(renderCode, 150); });
+
+/* ---------------- الملفات ---------------- */
+function renderFiles(){
+  const box = $('#filesList'); box.innerHTML = '';
+  state.order.forEach(name => {
+    const f = state.fs[name]; if(!f) return;
+    const row = document.createElement('div');
+    row.className = 'file-row' + (name === state.active ? ' active' : '');
+    const icon = name.endsWith('.css') ? '🎨' : name.endsWith('.jsx') ? '⚛️' : '📄';
+    row.innerHTML = '<span>' + icon + '</span><span class="nm">' + esc(name) + '</span><span class="sz">' + f.content.length + '</span>';
+    const act = document.createElement('div');
+    act.className = 'frow-actions';
+    act.innerHTML = '<button class="mini" title="فتح">📂</button><button class="mini" title="إعادة تسمية">✎</button><button class="mini danger" title="حذف">🗑</button>';
+    const [bOpen,bRen,bDel] = act.querySelectorAll('button');
+    bOpen.onclick = () => { openFile(name); switchTab('code'); };
+    bRen.onclick = async () => {
+      const n = await askText('إعادة تسمية الملف', { value:name, placeholder:'الاسم الجديد' });
+      if(!n || n === name) return;
+      if(state.fs[n]) return toast('الاسم مستخدم ⚠️');
+      state.fs[n] = { content:f.content };
+      delete state.fs[name];
+      state.order[state.order.indexOf(name)] = n;
+      state.tabs = state.tabs.map(t => t === name ? n : t);
+      if(state.active === name) state.active = n;
+      renderFiles(); renderTabs(); loadIntoEditor(); save();
+    };
+    bDel.onclick = async () => {
+      if(state.order.length <= 1) return toast('لا يمكن حذف آخر ملف');
+      const ok = await askConfirm('حذف الملف', 'سيُحذف الملف "' + name + '" نهائيًا.', 'حذف');
+      if(!ok) return;
+      delete state.fs[name];
+      state.order = state.order.filter(n => n !== name);
+      state.tabs = state.tabs.filter(n => n !== name);
+      if(state.active === name) state.active = state.order[0];
+      renderFiles(); renderTabs(); loadIntoEditor(); save(); scheduleRun();
+    };
+    row.appendChild(act);
+    box.appendChild(row);
+  });
+}
+async function addFile(){
+  const n = await askText('ملف جديد', { placeholder:'مثال: utils.js', note:'اكتب اسم الملف مع الامتداد (.js أو .jsx أو .css)' });
+  if(!n) return;
+  if(state.fs[n]) return toast('الملف موجود ⚠️');
+  const base = n.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9_$]/g, '') || 'MyComponent';
+  state.fs[n] = { content: n.endsWith('.css') ? '/* أنماط */\n'
+    : n.endsWith('.jsx') ? 'function ' + base + '() {\n  return <div>Hello</div>;\n}\n'
+    : '// ' + n + '\n' };
+  state.order.push(n);
+  state.tabs.push(n); state.active = n;
+  renderFiles(); renderTabs(); loadIntoEditor(); save(); scheduleRun();
+  toast('أُضيف الملف ' + n);
+}
+$('#btnAddFile').onclick = addFile;
+
+/* ---------------- السجل ---------------- */
+function log(level, msg, extra, jump){
+  state.logs.push({ level, msg, ts:new Date(), extra:extra||null, jump:jump||null });
+  if(state.logs.length > 250) state.logs.shift();
+  if(level === 'error') state.errCount++;
+  renderLogs();
+}
+function renderLogs(){
+  const box = $('#conList');
+  box.innerHTML = '';
+  if(!state.logs.length){
+    box.innerHTML = '<div class="log" style="text-align:center;color:var(--dim2)">لا توجد رسائل بعد — شغّل الكود لعرض المخرجات</div>';
+  }
+  state.logs.forEach(l => {
+    const d = document.createElement('div');
+    d.className = 'log ' + l.level + (l.jump ? ' clickable' : '');
+    const t = l.ts.toTimeString().slice(0,8);
+    let html = '<span class="lv">' + (l.level === 'log' ? 'LOG' : l.level.toUpperCase()) + '</span>' +
+      '<span class="msg" style="unicode-bidi:plaintext">' + esc(l.msg) + '</span><span class="ts">' + t + '</span>';
+    if(l.extra) html += '\n' + esc(l.extra);
+    if(l.jump) html += '<span class="hint">👆 اضغط للانتقال إلى السطر ' + l.jump.line + ' في ' + esc(l.jump.file) + '</span>';
+    d.innerHTML = html;
+    if(l.jump) d.onclick = () => jumpTo(l.jump);
+    box.appendChild(d);
+  });
+  const badge = $('#errBadge');
+  badge.style.display = state.errCount ? 'inline-block' : 'none';
+  badge.textContent = state.errCount;
+  box.scrollTop = box.scrollHeight;
+}
+$('#btnClear').onclick = () => { state.logs = []; state.errCount = 0; renderLogs(); };
+
+/* ---------------- القفز إلى خطأ ---------------- */
+function jumpTo(j){
+  if(!j) return;
+  if(j.file && state.fs[j.file]) openFile(j.file);
+  switchTab('code');
+  const code = codeEl.value;
+  const lines = code.split('\n');
+  const idx = Math.max(0, Math.min(lines.length - 1, j.line - 1));
+  let pos = 0;
+  for(let i = 0; i < idx; i++) pos += lines[i].length + 1;
+  codeEl.focus({ preventScroll:true });
+  codeEl.setSelectionRange(pos, pos + (lines[idx] || '').length);
+  const lh = state.codeFont * 1.65;
+  codeEl.scrollTop = Math.max(0, idx * lh - codeEl.clientHeight / 3);
+  syncScroll();
+  updateStatus();
+}
+
+/* ---------------- بناء وتشغيل ---------------- */
+const S_OPEN = '<' + 'script>';
+const S_CLOSE = '<' + '/script>';
+
+const BRIDGE = `(function(){
+  function send(type,payload){ try{ parent.postMessage({__reactide:true,type:type,payload:payload},'*'); }catch(e){} }
+  function ser(v){
+    if(typeof v === 'string') return v;
+    if(v instanceof Error) return v.message;
+    if(typeof v === 'function') return '[function]';
+    try{ return JSON.stringify(v, function(k,val){ if(val instanceof Error) return val.message; if(typeof val === 'function') return '[function]'; return val; }); }
+    catch(e){ return String(v); }
+  }
+  ['log','info','warn','error','debug'].forEach(function(lv){
+    var orig = console[lv];
+    console[lv] = function(){
+      var args = Array.prototype.map.call(arguments, ser);
+      send('console', { level: lv === 'debug' ? 'log' : lv, args: args });
+      try{ orig.apply(console, arguments); }catch(e){}
+    };
+  });
+  window.onerror = function(msg, src, line, col, err){
+    send('error', { message: String(msg), line: line, col: col, stack: err && err.stack ? String(err.stack) : '' });
+    return false;
+  };
+  window.addEventListener('unhandledrejection', function(ev){
+    var r = ev.reason;
+    send('error', { message: 'وعد مرفوض: ' + (r && r.message ? r.message : String(r)) });
+  });
+})();`;
+
+const BOOT = `(function(){
+  function EB(props){
+    React.Component.call(this, props);
+    this.state = { e: null };
+  }
+  EB.prototype = Object.create(React.Component.prototype);
+  EB.prototype.constructor = EB;
+  EB.getDerivedStateFromError = function(e){ return { e: e }; };
+  EB.prototype.render = function(){
+    if(this.state.e){
+      return React.createElement('div', { style: { padding: '16px', fontFamily: 'system-ui', color: '#f85149', background: '#fff' } },
+        React.createElement('h3', null, '⚠️ خطأ في العرض'),
+        React.createElement('pre', { style: { whiteSpace: 'pre-wrap', fontSize: '12px' } }, String(this.state.e && this.state.e.stack || this.state.e)));
+    }
+    return this.props.children;
+  };
+  try{
+    var Comp = window.__APP__ || (typeof App !== 'undefined' ? App : null);
+    if(!Comp) throw new Error('لم يتم العثور على مكوّن App. عرّف function App() أو استخدم export default App');
+    var root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(EB, null, React.createElement(Comp)));
+    console.log('✅ تم التشغيل بنجاح');
+  }catch(e){
+    console.error(e && e.message ? e.message : String(e));
+  }
+})();`;
+
+const PREVIEW_CSS = `*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Tahoma,Arial,sans-serif;background:#fff;color:#111}
+#root{min-height:100vh}
+button{font-family:inherit}`;
+
+const HOOKS = 'var useState=React.useState,useEffect=React.useEffect,useMemo=React.useMemo,useRef=React.useRef,useCallback=React.useCallback,useReducer=React.useReducer,useContext=React.useContext,useId=React.useId,useLayoutEffect=React.useLayoutEffect; ';
+
+function parseImports(code){
+  const out = [];
+  const re = /(?:^|\n)\s*import\s+(?:[^'";]*?\s+from\s+)?['"]([^'"]+)['"]/g;
+  let m;
+  while((m = re.exec(code)) !== null) out.push(m[1]);
+  return out;
+}
+function resolveSpec(spec){
+  if(state.fs[spec]) return spec;
+  const base = spec.split('/').pop();
+  if(state.fs[base]) return base;
+  if(state.fs[base + '.js']) return base + '.js';
+  if(state.fs[base + '.jsx']) return base + '.jsx';
+  const jx = base.replace(/\.js$/, '.jsx');
+  if(state.fs[jx]) return jx;
+  return null;
+}
+function preprocess(code){
+  let out = code;
+  const imports = parseImports(out);
+  out = out.replace(/(?:^|\n)([ \t]*import\s+(?:[^'";]*?\s+from\s+)?['"][^'"]+['"];?)/g, (m, g1) => '\n' + blank(g1));
+  let appName = null;
+  const defFn = out.match(/\bexport\s+default\s+(?:function|class)\s+([A-Za-z_$][\w$]*)/);
+  if(defFn){
+    appName = defFn[1];
+    out = out.replace(/\bexport\s+default\s+/, m => blank(m));
+    out += '\nwindow.__APP__ = ' + appName + ';\n';
+  } else if(/\bexport\s+default\b/.test(out)){
+    out = out.replace(/\bexport\s+default\s*/, 'window.__APP__=');
+  }
+  out = out.replace(/\bexport\s+(?=(const|let|var|function|class|async)\b)/g, m => blank(m));
+  return { code: HOOKS + out, imports };
+}
+function topoOrder(){
+  const names = state.order.filter(n => state.fs[n]);
+  const deps = {};
+  names.forEach(n => { deps[n] = parseImports(state.fs[n].content).map(resolveSpec).filter(x => x && x !== n); });
+  const visited = {};
+  let out = [];
+  function visit(n){
+    if(visited[n]) return;
+    visited[n] = 1;
+    (deps[n] || []).forEach(d => { if(names.includes(d)) visit(d); });
+    out.push(n);
+  }
+  names.forEach(visit);
+  const entry = names.find(n => /^app\.jsx$/i.test(n)) || names.find(n => n.endsWith('.jsx'));
+  if(entry && out[out.length-1] !== entry){ out = out.filter(n => n !== entry); out.push(entry); }
+  return out;
+}
+function compileAll(){
+  const css = [], scripts = [], errors = [];
+  topoOrder().forEach(name => {
+    const f = state.fs[name];
+    if(name.endsWith('.css')){ css.push(f.content); return; }
+    const pre = preprocess(f.content);
+    try{
+      const res = window.Babel.transform(pre.code, {
+        presets: [['react', { runtime:'classic' }]],
+        sourceType: 'script',
+        filename: name,
+        compact: false
+      });
+      scripts.push({ name, code: res.code });
+    }catch(err){
+      const line = err.loc ? err.loc.line : 0;
+      const msg = String(err.message).replace(/\s*\(\d+:\d+\)\s*$/,'').replace(/^\[BABEL\]\s*/, '');
+      errors.push({ name, message: msg, line });
+    }
+  });
+  return { css: css.join('\n'), scripts, errors };
+}
+function buildFrameHtml(build){
+  const reactTag = "<script src=\"https://unpkg.com/react@18.3.1/umd/react.production.min.js\"><\/script>";
+  const reactDomTag = "<script src=\"https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js\"><\/script>";
+  const scriptsHtml = build.scripts.map(s => S_OPEN + s.code + S_CLOSE).join('\n');
+  return '<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<style>' + PREVIEW_CSS + '\n' + (build.css || '') + '</style></head><body>' +
+    '<div id="root"></div>' +
+    S_OPEN + BRIDGE + S_CLOSE +
+    reactTag + reactDomTag +
+    scriptsHtml +
+    S_OPEN + BOOT + S_CLOSE +
+    '</body></html>';
+}
+function setState(txt, kind){
+  const el = $('#stState');
+  el.textContent = txt;
+  el.className = kind || 'ok';
+}
+let lastGoodBlob = null;
+function run(){
+  const btn = $('#btnRun');
+  btn.classList.add('busy');
+  $('#runIcon').textContent = '⟳'; $('#runIcon').className = 'spin';
+  state.errCount = 0;
+  state.errorLine = null;
+  const build = compileAll();
+  if(build.errors.length){
+    const e = build.errors[0];
+    state.errorLine = { file: e.name, line: e.line || 1 };
+    log('error', 'خطأ ترجمة في ' + e.name + (e.line ? ' (سطر ' + e.line + ')' : '') + ': ' + e.message, null,
+        e.line ? { file:e.name, line:e.line } : null);
+    build.errors.slice(1).forEach(x => log('error', 'خطأ ترجمة في ' + x.name + ': ' + x.message));
+    setState('● خطأ', 'err');
+    renderCode();
+    btn.classList.remove('busy'); $('#runIcon').textContent = '▶'; $('#runIcon').className = '';
+    return;
+  }
+  const html = buildFrameHtml(build);
+  $('#frame').srcdoc = html;
+  if(state.blob) URL.revokeObjectURL(state.blob);
+  state.blob = URL.createObjectURL(new Blob([html], { type:'text/html' }));
+  lastGoodBlob = state.blob;
+  setState('● يعمل', 'ok');
+  log('log', '▶ تشغيل ' + build.scripts.length + ' ملف');
+  setTimeout(() => { btn.classList.remove('busy'); $('#runIcon').textContent = '▶'; $('#runIcon').className = ''; }, 260);
+}
+function scheduleRun(){
+  if(!state.autoRun) return;
+  clearTimeout(runTimer);
+  runTimer = setTimeout(run, 900);
+}
+window.addEventListener('message', e => {
+  if(!e.data || !e.data.__reactide) return;
+  const d = e.data;
+  if(d.type === 'console'){
+    const lv = d.payload.level || 'log';
+    const txt = (d.payload.args || []).join(' ');
+    log(lv, txt);
+    if(lv === 'error') setState('● خطأ', 'err');
+  } else if(d.type === 'error'){
+    const p = d.payload;
+    log('error', p.message + (p.line ? ' (سطر ' + p.line + ')' : ''), p.stack || '');
+    setState('● خطأ', 'err');
+  }
+});
+
+/* ---------------- المعاينة ---------------- */
+function fitDevice(){
+  const d = DEVICES[state.device] || DEVICES.small;
+  const w = state.orient === 'landscape' ? d.h : d.w;
+  const h = state.orient === 'landscape' ? d.w : d.h;
+  const stage = $('#stage'), wrap = $('#devwrap');
+  const BORDER = 14; // حدّ الإطار (7px لكل جانب)
+  const availW = stage.clientWidth - 28, availH = stage.clientHeight - 28;
+  const s = Math.max(0.2, Math.min(1, availW / (w + BORDER), availH / (h + BORDER)));
+  wrap.style.width = Math.round(w * s + BORDER) + 'px';
+  wrap.style.height = Math.round(h * s + BORDER) + 'px';
+  const frame = $('#frame');
+  frame.style.width = w + 'px';
+  frame.style.height = h + 'px';
+  frame.style.transform = 'scale(' + s + ')';
+  frame.style.transformOrigin = 'top left';
+  $('#pvHint').innerHTML = '<span dir="ltr" style="unicode-bidi:isolate">' + w + '\u00d7' + h + '</span> بكسل' + (state.orient === 'landscape' ? ' (أفقي)' : '');
+}
+window.addEventListener('resize', fitDevice);
+if(window.ResizeObserver){ new ResizeObserver(() => fitDevice()).observe($('#stage')); }
+
+/* ---------------- التبويبات ---------------- */
+function switchTab(name){
+  $$('.pane').forEach(p => p.classList.remove('active'));
+  const map = { code:'#paneCode', preview:'#panePreview', console:'#paneConsole', files:'#paneFiles' };
+  $(map[name]).classList.add('active');
+  $$('.tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  if(name === 'preview') setTimeout(fitDevice, 60);
+}
+$$('.tabbar button').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
+
+/* ---------------- القوالب ---------------- */
+function applyTemplate(tpl){
+  state.fs = {}; state.order = [];
+  Object.keys(tpl.files).forEach(n => { state.fs[n] = { content:tpl.files[n] }; state.order.push(n); });
+  state.tabs = ['App.jsx']; state.active = 'App.jsx';
+  state.errorLine = null; state.undo.length = 0; state.redo.length = 0;
+  renderFiles(); renderTabs(); loadIntoEditor(); updateUndoButtons(); save(); run();
+}
+function templateSheet(){
+  let html = '<p class="sheet-note">اختر قالبًا للبدء — ملفات المشروع الحالية ستُستبدل.</p>';
+  Object.keys(TPL).forEach(k => {
+    html += '<div class="list-row"><span class="lbl">' + esc(TPL[k].name) + '<small>' + Object.keys(TPL[k].files).join(' • ') + '</small></span>' +
+      '<button class="mini" data-tpl="' + k + '">استخدام</button></div>';
+  });
+  const customKeys = Object.keys(state.custom);
+  if(customKeys.length){
+    html += '<div class="list-row" style="margin-top:8px"><span class="lbl" style="font-weight:700">قوالبك</span></div>';
+    customKeys.forEach(k => {
+      html += '<div class="list-row"><span class="lbl">' + esc(k) + '<small>' + (state.custom[k].order || []).join(' • ') + '</small></span>' +
+        '<button class="mini" data-use="' + esc(k) + '">استخدام</button>' +
+        '<button class="mini danger" data-del="' + esc(k) + '">🗑</button></div>';
+    });
+  }
+  openSheet('القوالب', html, [{ label:'إغلاق', value:null }]);
+  $$('#sheetBody [data-tpl]').forEach(b => b.onclick = () => {
+    const ok = askConfirm('تطبيق القالب', 'سيتم استبدال ملفات المشروع الحالية.', 'تطبيق');
+    ok.then(yes => { if(yes){ applyTemplate(TPL[b.dataset.tpl]); closeSheet(null); toast('تم تطبيق القالب ✅'); } });
+  });
+  $$('#sheetBody [data-use]').forEach(b => b.onclick = () => {
+    const t = state.custom[b.dataset.use];
+    const ok = askConfirm('تطبيق القالب', 'سيتم استبدال ملفات المشروع الحالية.', 'تطبيق');
+    ok.then(yes => {
+      if(!yes) return;
+      state.fs = {}; state.order = [];
+      (t.order || []).forEach(n => { if(t.fs[n]) { state.fs[n] = { content:t.fs[n] }; state.order.push(n); } });
+      state.tabs = ['App.jsx']; state.active = 'App.jsx';
+      renderFiles(); renderTabs(); loadIntoEditor(); save(); run();
+      closeSheet(null); toast('تم تطبيق قالبك ✅');
+    });
+  });
+  $$('#sheetBody [data-del]').forEach(b => b.onclick = () => {
+    delete state.custom[b.dataset.del]; save(); closeSheet(null); templateSheet();
+  });
+}
+$('#btnTpl').onclick = templateSheet;
+
+/* ---------------- القائمة ---------------- */
+function menuHTML(){
+  return '<div class="list-row"><span class="lbl">قوالب جاهزة<small>ابدأ مشروعًا من الصفر</small></span><button class="mini" id="mTpl">فتح</button></div>' +
+    '<div class="list-row"><span class="lbl">حفظ المشروع كقالب<small>يظهر في قائمة القوالب</small></span><button class="mini" id="mSaveTpl">حفظ</button></div>' +
+    '<div class="list-row"><span class="lbl">تشغيل تلقائي عند الكتابة<small>يعيد تشغيل المعاينة بعد التوقف</small></span><button class="mini" id="mAuto">' + (state.autoRun ? 'مفعّل ✅' : 'معطّل') + '</button></div>' +
+    '<div class="list-row"><span class="lbl">مشاركة الكود<small>أرسل ملفات المشروع عبر تطبيقات المشاركة</small></span><button class="mini" id="mShare">مشاركة</button></div>' +
+    '<div class="list-row"><span class="lbl">تنزيل المشروع (ZIP)<small>ملفات الكود جاهزة للاستخدام</small></span><button class="mini" id="mZip">تنزيل</button></div>' +
+    '<div class="list-row"><span class="lbl">استيراد ملف<small>أضف ملفًا من جهازك</small></span><button class="mini" id="mImp">اختيار</button></div>' +
+    '<div class="list-row"><span class="lbl">مسح الحفظ والبدء من جديد<small>يحذف كل ما حفظته</small></span><button class="mini danger" id="mReset">مسح</button></div>' +
+    '<div class="list-row"><span class="lbl">حول التطبيق<small>الاستخدام والاختصارات</small></span><button class="mini" id="mHelp">عرض</button></div>';
+}
+$('#btnMenu').onclick = () => {
+  openSheet('القائمة', menuHTML(), [{ label:'إغلاق', value:null }]);
+  $('#mTpl').onclick = () => { closeSheet(null); templateSheet(); };
+  $('#mSaveTpl').onclick = async () => {
+    const name = await askText('حفظ كقالب', { placeholder:'اسم القالب', note:'سيظهر في قائمة القوالب على هذا الجهاز.' });
+    if(!name) return;
+    const fs = {}; state.order.forEach(n => fs[n] = state.fs[n].content);
+    state.custom[name] = { fs, order: state.order.slice() };
+    save(); toast('تم الحفظ كقالب: ' + name);
+  };
+  $('#mAuto').onclick = () => {
+    state.autoRun = !state.autoRun;
+    updateAutoChip(); closeSheet(null);
+    toast(state.autoRun ? 'التشغيل التلقائي مفعّل ⚡' : 'التشغيل التلقائي معطّل');
+  };
+  $('#mShare').onclick = () => { closeSheet(null); shareCode(); };
+  $('#mZip').onclick = () => { closeSheet(null); downloadZip(); };
+  $('#mImp').onclick = () => { closeSheet(null); fileInput.click(); };
+  $('#mReset').onclick = async () => {
+    const ok = await askConfirm('مسح كل شيء', 'سيُحذف كل ما حفظته على هذا الجهاز.', 'مسح');
+    if(!ok) return;
+    try{ localStorage.removeItem(LS); }catch(e){}
+    location.reload();
+  };
+  $('#mHelp').onclick = () => { closeSheet(null); helpSheet(); };
+};
+function helpSheet(){
+  openSheet('حول React IDE',
+    '<div class="help">' +
+    '<p><b>React IDE</b> — بيئة تطوير React كاملة داخل المتصفح، تعمل بدون إنترنت (في النسخة المستقلة).</p>' +
+    '<p>• <b>App.jsx</b> هو الملف الرئيسي: عرّف <code>function App()</code> أو <code>export default App</code>.</p>' +
+    '<p>• ملفات <b>.js</b> إضافية تُحمَّل قبل App تلقائيًا، وتعمل عبر <code>import { x } from \'utils.js\'</code>.</p>' +
+    '<p>• الأنماط في <b>styles.css</b>.</p>' +
+    '<p>• <b>تشغيل</b>: زر ▶ أو <code>Ctrl/⌘+Enter</code> — <b>حفظ</b>: <code>Ctrl/⌘+S</code> — <b>تراجع</b>: <code>Ctrl/⌘+Z</code>.</p>' +
+    '<p>• <b>↩</b> يلف الأسطر الطويلة (مفيد على الشاشات الصغيرة) — <b>A+/A−</b> يغيّر حجم خط الكود.</p>' +
+    '<p>• اضغط على أي خطأ في السجل ليقفز بك إلى السطر offending في المحرر.</p>' +
+    '<p>• الملفات تُحفظ تلقائيًا على الجهاز، وتوجد نسخ احتياطية في "القائمة ← حفظ كقالب".</p>' +
+    '</div>', [{ label:'فهمت', value:null, primary:true }]);
+}
+$('#btnFiles').onclick = () => { if(window.innerWidth >= 900) openSheet('الملفات', filesSheetHTML(), [{label:'إغلاق',value:null}]); else switchTab('files'); };
+$('#btnConsole').onclick = () => { if(window.innerWidth >= 900) openSheet('سجل المخرجات', '<div id="conList2" style="max-height:60vh;overflow:auto"></div>', [{label:'إغلاق',value:null}]); else switchTab('console'); };
+$('#btnTheme').onclick = () => { setTheme(state.theme === 'dark' ? 'light' : 'dark'); toast(state.theme === 'light' ? 'المظهر الفاتح ☀️' : 'المظهر الداكن 🌙'); };
+$('#btnRun').onclick = () => run();
+$('#btnCopy').onclick = () => copyCode();
+$('#btnSave').onclick = () => { save(); toast('تم الحفظ 💾'); };
+$('#btnReload').onclick = () => run();
+$('#btnRotate').onclick = () => { state.orient = state.orient === 'portrait' ? 'landscape' : 'portrait'; fitDevice(); };
+$('#btnPop').onclick = () => { if(lastGoodBlob) window.open(lastGoodBlob, '_blank'); else toast('شغّل الكود أولاً'); };
+function toggleFullscreen(){
+  const on = document.body.classList.toggle('fs-preview');
+  if(on && document.documentElement.requestFullscreen){
+    document.documentElement.requestFullscreen().catch(()=>{});
+  } else if(!on && document.fullscreenElement){
+    document.exitFullscreen().catch(()=>{});
+  }
+  setTimeout(fitDevice, 140);
+}
+$('#btnFull').onclick = toggleFullscreen;
+$('#btnFsExit').onclick = toggleFullscreen;
+$('#btnAuto').onclick = () => { state.autoRun = !state.autoRun; updateAutoChip(); toast(state.autoRun ? 'التشغيل التلقائي مفعّل ⚡' : 'التشغيل التلقائي معطّل'); };
+function updateAutoChip(){
+  const b = $('#btnAuto');
+  b.classList.toggle('on', state.autoRun);
+  b.textContent = state.autoRun ? '⚡ تلقائي' : '⏸ يدوي';
+}
+$$('#devSeg button').forEach(b => b.onclick = () => {
+  $$('#devSeg button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  state.device = b.dataset.dev;
+  fitDevice();
+});
+function filesSheetHTML(){
+  let h = '';
+  state.order.forEach(name => {
+    const f = state.fs[name];
+    h += '<div class="list-row"><span class="lbl">' + esc(name) + '<small>' + f.content.length + ' حرف</small></span>' +
+      '<button class="mini" data-open="' + esc(name) + '">فتح</button></div>';
+  });
+  return h;
+}
+
+/* ---------------- مشاركة ونسخ ---------------- */
+function projectText(){
+  return state.order.map(n => '// ===== ' + n + ' =====\n' + state.fs[n].content).join('\n\n');
+}
+async function copyCode(){
+  const text = currentFile() ? currentFile().content : '';
+  try{
+    await navigator.clipboard.writeText(text);
+    toast('تم نسخ الكود 📋');
+  }catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); toast('تم نسخ الكود 📋'); }
+    catch(e2){ toast('تعذّر النسخ'); }
+    ta.remove();
+  }
+}
+async function shareCode(){
+  const text = projectText();
+  if(navigator.share){
+    try{ await navigator.share({ title:'React IDE', text }); return; }
+    catch(e){ if(e && e.name === 'AbortError') return; }
+  }
+  try{
+    await navigator.clipboard.writeText(text);
+    toast('تم نسخ المشروع (استخدم المشاركة من المتصفح) 📋');
+  }catch(e){ toast('المشاركة غير مدعومة هنا'); }
+}
+
+/* ---------------- ZIP بدون مكتبات ---------------- */
+const CRC_TABLE = (function(){
+  const t = new Uint32Array(256);
+  for(let n = 0; n < 256; n++){ let c = n; for(let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(buf){
+  let c = 0xFFFFFFFF;
+  for(let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function zipStore(files){
+  const enc = new TextEncoder();
+  const parts = [], central = [];
+  let offset = 0;
+  Object.keys(files).forEach(name => {
+    const nameBytes = enc.encode(name);
+    const data = enc.encode(files[name]);
+    const crc = crc32(data);
+    const local = new Uint8Array(30 + nameBytes.length);
+    const dv = new DataView(local.buffer);
+    dv.setUint32(0, 0x04034b50, true);
+    dv.setUint16(4, 20, true); dv.setUint16(6, 0x0800, true);
+    dv.setUint32(18, crc, true);
+    dv.setUint32(22, data.length, true); dv.setUint32(26, data.length, true);
+    dv.setUint16(28, nameBytes.length, true);
+    local.set(nameBytes, 30);
+    parts.push(local, data);
+    const cd = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(cd.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true); cv.setUint16(6, 20, true); cv.setUint16(8, 0x0800, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, data.length, true); cv.setUint32(24, data.length, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint32(42, offset, true);
+    cd.set(nameBytes, 46);
+    central.push(cd);
+    offset += local.length + data.length;
+  });
+  let cdSize = 0; central.forEach(c => cdSize += c.length);
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, central.length, true); ev.setUint16(10, central.length, true);
+  ev.setUint32(12, cdSize, true); ev.setUint32(16, offset, true);
+  return new Blob(parts.concat(central, [end]), { type:'application/zip' });
+}
+function downloadZip(){
+  const files = {};
+  state.order.forEach(n => files[n] = state.fs[n].content);
+  files['index.html'] = '<!DOCTYPE html>\n<html lang="ar" dir="rtl"><head><meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>مشروع React</title>\n<style>' + PREVIEW_CSS + '</style>\n</head><body>\n<div id="root"></div>\n</body></html>';
+  const blob = zipStore(files);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'react-project.zip';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  toast('تم تنزيل المشروع ⬇️');
+}
+
+/* ---------------- استيراد ---------------- */
+const fileInput = document.createElement('input');
+fileInput.type = 'file'; fileInput.accept = '.js,.jsx,.css,.txt,.json'; fileInput.id = 'fileInput';
+fileInput.style.display = 'none';
+document.body.appendChild(fileInput);
+fileInput.onchange = () => {
+  const f = fileInput.files[0]; if(!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    state.fs[f.name] = { content:String(rd.result) };
+    if(!state.order.includes(f.name)) state.order.push(f.name);
+    state.tabs.push(f.name); state.active = f.name;
+    renderFiles(); renderTabs(); loadIntoEditor(); save(); scheduleRun();
+    toast('تم استيراد ' + f.name);
+  };
+  rd.readAsText(f);
+};
+
+/* ---------------- تكيّف مع لوحة المفاتيح ---------------- */
+function syncViewport(){
+  const vv = window.visualViewport;
+  const h = vv ? vv.height : window.innerHeight;
+  document.documentElement.style.setProperty('--app-h', h + 'px');
+  setTimeout(fitDevice, 60);
+}
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize', syncViewport);
+  window.visualViewport.addEventListener('scroll', () => { window.scrollTo(0, 0); });
+}
+window.addEventListener('orientationchange', () => setTimeout(syncViewport, 250));
+
+/* ---------------- البدء ---------------- */
+function boot(){
+  const restored = load();
+  if(!restored) applyTemplate(TPL.counter);          // يطبّق القالب ويشغّل مرة واحدة
+  else { renderFiles(); renderTabs(); loadIntoEditor(); setTimeout(run, 300); }
+  applyFont(); applyWrap(); updateAutoChip(); updateUndoButtons(); renderLogs();
+  switchTab('code');
+  syncViewport(); fitDevice();
+  setTimeout(() => { fitDevice(); }, 300);
+  document.body.classList.toggle('wide', window.innerWidth >= 900);
+  window.addEventListener('resize', () => {
+    document.body.classList.toggle('wide', window.innerWidth >= 900);
+    if(window.innerWidth >= 900) fitDevice();
+  });
+  if(!restored) setTimeout(() => helpSheet(), 500);
+}
+if(!window.Babel){
+  document.body.insertAdjacentHTML('afterbegin',
+    '<div style="padding:14px;background:#f85149;color:#fff;font-family:system-ui">تعذّر تحميل مترجم Babel. تأكد من سلامة الملف.</div>');
+}
+try{ boot(); }
+catch(e){
+  document.body.insertAdjacentHTML('afterbegin',
+    '<div style="padding:14px;background:#f85149;color:#fff;font-family:system-ui">خطأ في تشغيل التطبيق: ' + esc(e.message) + '</div>');
+}
+</script>
+</body>
+</html>

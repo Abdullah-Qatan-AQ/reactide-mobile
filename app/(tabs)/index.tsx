@@ -1,5 +1,5 @@
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { startOAuthLogin } from "@/constants/oauth";
 import { CodeEditor } from "@/components/ide/code-editor";
 import { ConsolePanel } from "@/components/ide/console-panel";
 import { FilesPanel } from "@/components/ide/files-panel";
@@ -24,7 +25,9 @@ import { SettingsPanel } from "@/components/ide/settings-panel";
 import { TerminalPanel, TerminalLine } from "@/components/ide/terminal-panel";
 import { clearGithubToken, getGithubToken, getGithubViewer, GithubRepo, GithubViewer, listGithubRepos, saveGithubToken } from "@/lib/github-api";
 import { parseImportedProject, pickProjectInput, shareProjectBundle } from "@/lib/file-transfer";
-import { installWorkspacePackage, runWorkspaceCommand } from "@/lib/workspace-api";
+import { getWorkspaceStatus, installWorkspacePackage, runWorkspaceCommand } from "@/lib/workspace-api";
+import type { SafeWorkspaceCommand, WorkspaceStatus } from "@/lib/workspace-api";
+import { useAuth } from "@/hooks/use-auth";
 import {
   cloneDefaultProject,
   fileIcon,
@@ -52,24 +55,29 @@ const NAV_ITEMS: { key: IDEView; label: string; icon: string }[] = [
 ];
 
 type ModalKind = "add" | "rename" | "source" | null;
+const SAFE_WORKSPACE_COMMANDS = new Set<SafeWorkspaceCommand>([
+  "pwd", "node --version", "npm --version", "pnpm --version", "python3 --version",
+]);
 
 export default function HomeScreen() {
+  const { user, isAuthenticated, logout } = useAuth({ autoFetch: Platform.OS === "web" });
   const [project, setProject] = useState<IDEProject | null>(null);
   const [view, setView] = useState<IDEView>("editor");
   const [logs, setLogs] = useState<IDELog[]>([]);
   const [fontSize, setFontSize] = useState(14);
-  const [wrap, setWrap] = useState(false);
-  const [dark, setDark] = useState(true);
+  const dark = true;
   const [running, setRunning] = useState(false);
+  const [previewReloadKey, setPreviewReloadKey] = useState(0);
   const [saved, setSaved] = useState(true);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
-  const runTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([{ id: "terminal-boot", kind: "system", text: "Workspace shell جاهز — الأوامر تعمل عبر runtime المتصل" }]);
+  const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([{ id: "terminal-boot", kind: "system", text: "runtime متاح في معاينة الويب بعد تسجيل الدخول؛ دخول Android غير مفعّل في هذه النسخة." }]);
   const [terminalCommand, setTerminalCommand] = useState("");
   const [terminalPackage, setTerminalPackage] = useState("");
   const [terminalRunning, setTerminalRunning] = useState(false);
+  const [workspaceStatus, setWorkspaceStatus] = useState<WorkspaceStatus | null>(null);
+  const [workspaceError, setWorkspaceError] = useState("");
   const [githubToken, setGithubToken] = useState("");
   const [githubViewer, setGithubViewer] = useState<GithubViewer | null>(null);
   const [githubRepos, setGithubRepos] = useState<GithubRepo[]>([]);
@@ -77,6 +85,19 @@ export default function HomeScreen() {
   const [modalKind, setModalKind] = useState<ModalKind>(null);
   const [modalValue, setModalValue] = useState("");
   const [pendingRename, setPendingRename] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+    const previousDocumentDirection = document.documentElement.dir;
+    const previousBodyDirection = document.body.dir;
+    document.documentElement.dir = "rtl";
+    document.body.dir = "rtl";
+    return () => {
+      document.documentElement.dir = previousDocumentDirection;
+      document.body.dir = previousBodyDirection;
+    };
+  }, []);
 
   useEffect(() => {
     loadProject().then((loaded) => {
@@ -85,6 +106,25 @@ export default function HomeScreen() {
     });
     getGithubToken().then((token) => { if (token) setGithubToken(token); }).catch(() => undefined);
   }, []);
+
+  const refreshWorkspaceStatus = useCallback(async () => {
+    if (Platform.OS !== "web" || !isAuthenticated) {
+      setWorkspaceStatus(null);
+      setWorkspaceError(Platform.OS === "web" ? "" : "تسجيل الدخول إلى runtime غير متاح على Android في هذه النسخة.");
+      return;
+    }
+    setWorkspaceError("");
+    try {
+      setWorkspaceStatus(await getWorkspaceStatus());
+    } catch (error) {
+      setWorkspaceStatus(null);
+      setWorkspaceError(error instanceof Error ? error.message : "تعذر الاتصال بـ runtime.");
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    void refreshWorkspaceStatus();
+  }, [refreshWorkspaceStatus]);
 
   useEffect(() => {
     if (!project) return;
@@ -101,6 +141,21 @@ export default function HomeScreen() {
 
   const appendLog = (level: IDELog["level"], message: string) => {
     setLogs((current) => [{ id: `${Date.now()}-${Math.random()}`, level, message, time: formatClock() }, ...current].slice(0, 50));
+  };
+
+  const handleLogin = async () => {
+    try {
+      await startOAuthLogin();
+      appendLog("info", "بعد موافقة Manus سيعود المتصفح إلى معاينة الويب تلقائيًا.");
+    } catch (error) {
+      Alert.alert("تعذر تسجيل الدخول", error instanceof Error ? error.message : "تحقق من اتصال الجهاز.");
+    }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    setWorkspaceStatus(null);
+    setTerminalLines((lines) => [...lines, { id: `${Date.now()}-logout`, kind: "system", text: "تم تسجيل الخروج وإغلاق مساحة runtime." }]);
   };
 
   const updateFile = (content: string) => {
@@ -175,9 +230,12 @@ export default function HomeScreen() {
       setProject({ ...project, files: [...project.files, nextFile], activeFile: value, updatedAt: Date.now() });
       appendLog("info", `أُضيف الملف ${value}`);
     } else if (modalKind === "rename") {
-      if (!value || value === pendingRename || project.files.some((file) => file.name === value)) {
-        if (value === pendingRename) { setModalKind(null); return; }
-        Alert.alert("اسم غير متاح", "تأكد أن الاسم جديد ويحتوي على امتداد واضح.");
+      if (value === pendingRename) {
+        setModalKind(null);
+        return;
+      }
+      if (!value || value.length > 120 || !/^[\w.-]+$/.test(value) || project.files.some((file) => file.name.toLowerCase() === value.toLowerCase())) {
+        Alert.alert("اسم غير متاح", "استخدم اسم ملف بسيط حتى 120 حرفًا، دون مجلدات أو اسم مكرر.");
         return;
       }
       setSaved(false);
@@ -198,44 +256,36 @@ export default function HomeScreen() {
   };
 
   const deleteFile = (name: string) => {
-    if (!project) return;
-    if (project.files.length <= 1) {
-      Alert.alert("لا يمكن الحذف", "يجب أن يبقى ملف واحد على الأقل في المشروع.");
-      return;
-    }
-    Alert.alert("حذف الملف", `سيُحذف ${name} نهائيًا من التخزين المحلي.`, [
-      { text: "إلغاء", style: "cancel" },
-      {
-        text: "حذف",
-        style: "destructive",
-        onPress: () => {
-          const remaining = project.files.filter((file) => file.name !== name);
-          setSaved(false);
-          setProject({ ...project, files: remaining, activeFile: project.activeFile === name ? remaining[0].name : project.activeFile, updatedAt: Date.now() });
-          appendLog("warn", `حُذف الملف ${name}`);
-        },
-      },
-    ]);
+    if (!project || project.files.length <= 1) return;
+    setDeleteTarget(name);
+  };
+
+  const confirmDelete = () => {
+    if (!project || !deleteTarget) return;
+    const remaining = project.files.filter((file) => file.name !== deleteTarget);
+    if (remaining.length === 0) return;
+    setSaved(false);
+    setProject({
+      ...project,
+      files: remaining,
+      activeFile: project.activeFile === deleteTarget ? remaining[0].name : project.activeFile,
+      updatedAt: Date.now(),
+    });
+    appendLog("warn", `حُذف الملف ${deleteTarget}`);
+    setDeleteTarget(null);
   };
 
   const runProject = () => {
-    if (!project) return;
-    if (running) {
-      if (runTimer.current) clearTimeout(runTimer.current);
-      runTimer.current = null;
+    if (!project || !activeFile) return;
+    setView("preview");
+    if (!/\.html?$/i.test(activeFile.name)) {
       setRunning(false);
-      appendLog("warn", "أوقف المستخدم عملية المعاينة قبل اكتمالها");
+      appendLog("warn", `لم يُنفّذ ${activeFile.name}: لا يوجد runtime متصل لـ ${languageForFile(activeFile.name)}.`);
       return;
     }
     setRunning(true);
-    setView("preview");
-    appendLog("info", `بدء بناء ${project.activeFile} عبر محرك المعاينة المعزول`);
-    runTimer.current = setTimeout(() => {
-      setRunning(false);
-      runTimer.current = null;
-      if (activeFile && /App\.(jsx|tsx)$/.test(activeFile.name)) appendLog("success", "اكتملت المعاينة بنجاح — لا توجد أخطاء بناء ظاهرة");
-      else appendLog("warn", "هذه اللغة تحتاج runtime خارجيًا للتنفيذ؛ تم إبقاء المعاينة في وضع المعلومات");
-    }, 700);
+    setPreviewReloadKey((key) => key + 1);
+    appendLog("info", `تم تحديث معاينة ${activeFile.name} داخل WebView محصور الشبكة.`);
   };
 
   const openExternal = async (rawUrl: string) => {
@@ -276,10 +326,19 @@ export default function HomeScreen() {
       if (!picked || !project) return;
       const imported = parseImportedProject(picked.name, picked.content);
       if ("files" in imported) {
+        const names = new Set<string>();
+        for (const file of imported.files) {
+          const key = file.name.toLowerCase();
+          if (names.has(key)) throw new Error(`الحزمة تحتوي على اسم ملف مكرر: ${file.name}`);
+          names.add(key);
+        }
         setSaved(false);
         setProject(imported);
         appendLog("success", `تم استيراد مشروع ${imported.name} مع ${imported.files.length} ملفات`);
       } else {
+        if (project.files.some((file) => file.name.toLowerCase() === imported.name.toLowerCase())) {
+          throw new Error(`الملف ${imported.name} موجود بالفعل؛ أعد تسميته خارج التطبيق ثم أعد الاستيراد.`);
+        }
         setSaved(false);
         setProject({ ...project, files: [...project.files, imported], activeFile: imported.name, updatedAt: Date.now() });
         appendLog("success", `تم استيراد الملف ${imported.name}`);
@@ -294,11 +353,19 @@ export default function HomeScreen() {
   const runTerminal = async () => {
     const command = terminalCommand.trim();
     if (!command || terminalRunning) return;
+    if (Platform.OS !== "web" || !isAuthenticated || !workspaceStatus?.available) {
+      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-auth`, kind: "error", text: "runtime غير متاح على Android أو غير متصل في الويب." }]);
+      return;
+    }
+    if (!SAFE_WORKSPACE_COMMANDS.has(command as SafeWorkspaceCommand)) {
+      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-blocked`, kind: "error", text: "هذا الأمر غير مسموح. اختر أمرًا من الاختصارات الآمنة." }]);
+      return;
+    }
     setTerminalRunning(true);
     setTerminalLines((lines) => [...lines, { id: `${Date.now()}-cmd`, kind: "command", text: command }]);
     setTerminalCommand("");
     try {
-      const result = await runWorkspaceCommand(command);
+      const result = await runWorkspaceCommand(command as SafeWorkspaceCommand);
       setTerminalLines((lines) => [...lines, { id: `${Date.now()}-out`, kind: result.error ? "error" : "output", text: result.output || result.error || "(لا يوجد ناتج)" }]);
     } catch (error) {
       setTerminalLines((lines) => [...lines, { id: `${Date.now()}-err`, kind: "error", text: error instanceof Error ? error.message : "تعذر الاتصال بالـ runtime" }]);
@@ -310,13 +377,17 @@ export default function HomeScreen() {
   const installPackage = async () => {
     const packageName = terminalPackage.trim();
     if (!packageName || terminalRunning) return;
+    if (Platform.OS !== "web" || !isAuthenticated || !workspaceStatus?.available) {
+      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-auth`, kind: "error", text: "تنزيل الحزم غير متاح على Android أو قبل اتصال runtime في الويب." }]);
+      return;
+    }
     setTerminalRunning(true);
-    setTerminalLines((lines) => [...lines, { id: `${Date.now()}-install`, kind: "command", text: `pnpm add --ignore-scripts ${packageName}` }]);
+    setTerminalLines((lines) => [...lines, { id: `${Date.now()}-install`, kind: "command", text: `pnpm add --ignore-scripts --save-exact ${packageName}` }]);
     setTerminalPackage("");
     try {
       const result = await installWorkspacePackage(packageName);
-      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-install-out`, kind: result.error ? "error" : "output", text: result.output || result.error || "تم تنزيل الحزمة" }]);
-      appendLog(result.error ? "error" : "success", result.error || `تم تنزيل ${packageName} إلى runtime`);
+      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-install-out`, kind: "output", text: result.output || result.note || "تم تنزيل الحزمة" }]);
+      appendLog("success", result.note || `تم تنزيل ${packageName} إلى runtime المؤقت`);
     } catch (error) {
       setTerminalLines((lines) => [...lines, { id: `${Date.now()}-install-err`, kind: "error", text: error instanceof Error ? error.message : "تعذر تنزيل الحزمة" }]);
     } finally {
@@ -371,9 +442,10 @@ export default function HomeScreen() {
   const screenBg = dark ? "#0b0f16" : "#eef3f8";
   const panelBg = dark ? "#111823" : "#ffffff";
   const textColor = dark ? "#dbe3ee" : "#182434";
+  const nativeDirectionStyle = Platform.OS === "web" ? undefined : { direction: "rtl" as const };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: screenBg }]} edges={["top", "left", "right", "bottom"]}>
+    <SafeAreaView style={[styles.safe, nativeDirectionStyle, { backgroundColor: screenBg }]} edges={["top", "left", "right", "bottom"]}>
       <StatusBar style={dark ? "light" : "dark"} />
       <KeyboardAvoidingView style={styles.safe} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={[styles.topbar, { backgroundColor: panelBg }]}>
@@ -383,7 +455,7 @@ export default function HomeScreen() {
             <Pressable onPress={redo} disabled={redoStack.length === 0} style={[styles.topIcon, redoStack.length === 0 && styles.topIconDisabled]}><Text style={styles.topIconText}>↷</Text></Pressable>
             <Pressable onPress={shareProject} style={styles.topIcon}><Text style={styles.topIconText}>↗</Text></Pressable>
             <View style={styles.saveState}><View style={[styles.saveDot, { backgroundColor: saved ? "#53c68c" : "#d29922" }]} /><Text style={styles.saveText}>{saved ? "محفوظ" : "حفظ…"}</Text></View>
-            <Pressable onPress={runProject} style={[styles.runButton, running && styles.runButtonBusy]}><Text style={styles.runButtonText}>{running ? "إيقاف" : "تشغيل"}</Text><Text style={styles.runIcon}>{running ? "■" : "▷"}</Text></Pressable>
+            <Pressable onPress={runProject} style={[styles.runButton, running && styles.runButtonBusy]} accessibilityRole="button" accessibilityLabel="فتح المعاينة"><Text style={styles.runButtonText}>{running ? "جارٍ…" : "معاينة"}</Text><Text style={styles.runIcon}>{running ? "…" : "▷"}</Text></Pressable>
           </View>
         </View>
 
@@ -394,14 +466,14 @@ export default function HomeScreen() {
               {project.files.length > 4 && <Text style={styles.moreFiles}>+{project.files.length - 4}</Text>}
             </View>
             <View style={styles.editorTitle}><Text style={styles.breadcrumb}>mobile-starter / </Text><Text style={[styles.activeName, { color: textColor }]}>{activeFile.name}</Text><Pressable style={styles.editorMenu} onPress={() => setView("files")}><Text style={styles.editorMenuText}>الملفات ↗</Text></Pressable></View>
-            <CodeEditor file={activeFile} fontSize={fontSize} wrap={wrap} onChange={updateFile} onCursorChange={(line, column) => setCursor({ line, column })} />
+            <CodeEditor file={activeFile} fontSize={fontSize} onChange={updateFile} onCursorChange={(line, column) => setCursor({ line, column })} />
           </View>}
-          {view === "preview" && <PreviewPanel file={activeFile} running={running} onRun={runProject} onOpenEditor={() => setView("editor")} />}
+          {view === "preview" && <PreviewPanel file={activeFile} files={project.files} running={running} reloadKey={previewReloadKey} onRun={runProject} onOpenEditor={() => setView("editor")} onLoadComplete={() => setRunning(false)} />}
           {view === "console" && <ConsolePanel logs={logs} />}
-          {view === "terminal" && <TerminalPanel lines={terminalLines} command={terminalCommand} running={terminalRunning} onCommandChange={setTerminalCommand} onRun={runTerminal} onPreset={setTerminalCommand} packageName={terminalPackage} onPackageNameChange={setTerminalPackage} onInstall={installPackage} />}
+          {view === "terminal" && <TerminalPanel lines={terminalLines} command={terminalCommand} running={terminalRunning} onCommandChange={setTerminalCommand} onRun={runTerminal} onPreset={setTerminalCommand} packageName={terminalPackage} onPackageNameChange={setTerminalPackage} onInstall={installPackage} authSupported={Platform.OS === "web"} authenticated={Platform.OS === "web" && isAuthenticated} workspaceStatus={workspaceStatus} workspaceError={workspaceError} userName={user?.name} onLogin={handleLogin} onLogout={handleLogout} onRefresh={refreshWorkspaceStatus} />}
           {view === "files" && <FilesPanel files={project.files} activeFile={project.activeFile} onSelect={selectFile} onAdd={openAddFile} onImport={importFiles} onExport={exportFiles} onRename={openRename} onDelete={deleteFile} />}
           {view === "projects" && <ProjectsPanel project={project} externalUrl={project.sourceUrl} onExternalUrlChange={(value) => { setSaved(false); setProject({ ...project, sourceUrl: value }); }} onConnect={() => { setModalValue(project.sourceUrl); setModalKind("source"); }} onOpenUrl={openExternal} githubToken={githubToken} githubViewer={githubViewer} githubRepos={githubRepos} githubBusy={githubBusy} onGithubTokenChange={setGithubToken} onGithubConnect={connectGithub} onGithubDisconnect={disconnectGithub} />}
-          {view === "settings" && <SettingsPanel dark={dark} fontSize={fontSize} wrap={wrap} onToggleDark={() => setDark((value) => !value)} onChangeFontSize={setFontSize} onToggleWrap={() => setWrap((value) => !value)} onReset={resetProject} />}
+          {view === "settings" && <SettingsPanel fontSize={fontSize} onChangeFontSize={setFontSize} onReset={resetProject} />}
         </View>
 
         <View style={[styles.statusbar, { backgroundColor: panelBg }]}><Text style={styles.statusText}>Ln {cursor.line}, Col {cursor.column}</Text><Text style={styles.statusDivider}>·</Text><Text style={styles.statusText}>{languageForFile(activeFile.name)}</Text><Text style={styles.statusDivider}>·</Text><Text style={[styles.statusText, { color: saved ? "#53c68c" : "#d29922" }]}>{saved ? "✓ محفوظ محليًا" : "● تعديل غير محفوظ"}</Text><Pressable style={styles.shareStatus} onPress={shareProject}><Text style={styles.shareStatusText}>مشاركة ↗</Text></Pressable></View>
@@ -410,6 +482,22 @@ export default function HomeScreen() {
 
       <Modal visible={modalKind !== null} transparent animationType="slide" onRequestClose={() => setModalKind(null)}>
         <View style={styles.modalBackdrop}><View style={styles.sheet}><View style={styles.sheetHandle} /><View style={styles.sheetHeader}><Text style={styles.sheetTitle}>{modalKind === "add" ? "ملف جديد" : modalKind === "rename" ? "إعادة تسمية الملف" : "تثبيت مصدر خارجي"}</Text><Pressable onPress={() => setModalKind(null)}><Text style={styles.sheetClose}>×</Text></Pressable></View><Text style={styles.sheetHint}>{modalKind === "source" ? "احفظ الرابط كمرجع للمشروع. لن يتم تخزين أي token أو كلمة مرور." : "استخدم اسمًا واضحًا مع الامتداد حتى يتعرف المحرر على اللغة."}</Text><TextInput value={modalValue} onChangeText={setModalValue} autoFocus placeholder={modalKind === "source" ? "https://github.com/user/repo" : "component.tsx"} placeholderTextColor="#66768d" autoCapitalize="none" autoCorrect={false} style={styles.sheetInput} /><View style={styles.sheetActions}><Pressable style={styles.cancelButton} onPress={() => setModalKind(null)}><Text style={styles.cancelText}>إلغاء</Text></Pressable><Pressable style={styles.confirmButton} onPress={submitModal}><Text style={styles.confirmText}>{modalKind === "source" ? "حفظ الرابط" : "متابعة"}</Text></Pressable></View></View></View>
+      </Modal>
+      <Modal visible={deleteTarget !== null} transparent animationType="fade" onRequestClose={() => setDeleteTarget(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.deleteDialog}>
+            <Text style={styles.deleteTitle}>تأكيد حذف الملف</Text>
+            <Text style={styles.deleteMessage}>سيُحذف {deleteTarget} نهائيًا من مساحة العمل المحلية.</Text>
+            <View style={styles.deleteActions}>
+              <Pressable style={styles.deleteCancelButton} onPress={() => setDeleteTarget(null)} accessibilityRole="button" accessibilityLabel="إلغاء الحذف">
+                <Text style={styles.deleteCancelText}>إلغاء</Text>
+              </Pressable>
+              <Pressable style={styles.deleteConfirmButton} onPress={confirmDelete} accessibilityRole="button" accessibilityLabel="تأكيد حذف الملف">
+                <Text style={styles.deleteConfirmText}>حذف الملف</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -478,6 +566,14 @@ const styles = StyleSheet.create({
   sheetActions: { flexDirection: "row", gap: 10, marginTop: 14 },
   cancelButton: { flex: 1, height: 46, borderRadius: 12, borderWidth: 1, borderColor: "#2d3d54", alignItems: "center", justifyContent: "center" },
   cancelText: { color: "#aebbd0", fontSize: 13, fontWeight: "700" },
+  deleteDialog: { margin: 22, padding: 20, borderRadius: 18, borderWidth: 1, borderColor: "#34455f", backgroundColor: "#111823" },
+  deleteTitle: { color: "#f3f7fc", fontSize: 17, fontWeight: "800", textAlign: "right" },
+  deleteMessage: { color: "#aebbd0", fontSize: 12, lineHeight: 20, marginTop: 10, textAlign: "right" },
+  deleteActions: { flexDirection: "row", gap: 10, marginTop: 18 },
+  deleteCancelButton: { flex: 1, height: 44, borderRadius: 11, borderWidth: 1, borderColor: "#2d3d54", alignItems: "center", justifyContent: "center" },
+  deleteCancelText: { color: "#b6c2d2", fontSize: 12, fontWeight: "700" },
+  deleteConfirmButton: { flex: 1, height: 44, borderRadius: 11, backgroundColor: "#f85149", alignItems: "center", justifyContent: "center" },
+  deleteConfirmText: { color: "#ffffff", fontSize: 12, fontWeight: "800" },
   confirmButton: { flex: 1, height: 46, borderRadius: 12, backgroundColor: "#61dafb", alignItems: "center", justifyContent: "center" },
   confirmText: { color: "#04222e", fontSize: 13, fontWeight: "900" },
 });

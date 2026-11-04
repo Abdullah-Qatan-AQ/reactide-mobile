@@ -6,12 +6,11 @@ import { IDEFile, languageForFile, languageTone } from "@/lib/ide-model";
 type CodeEditorProps = {
   file: IDEFile;
   fontSize: number;
-  wrap: boolean;
   onChange: (content: string) => void;
   onCursorChange: (line: number, column: number) => void;
 };
 
-export function CodeEditor({ file, fontSize, wrap, onChange, onCursorChange }: CodeEditorProps) {
+export function CodeEditor({ file, fontSize, onChange, onCursorChange }: CodeEditorProps) {
   const inputRef = useRef<TextInput>(null);
   const language = languageForFile(file.name);
   const lines = useMemo(() => file.content.split("\n"), [file.content]);
@@ -65,7 +64,6 @@ export function CodeEditor({ file, fontSize, wrap, onChange, onCursorChange }: C
               minHeight: Math.max(260, lines.length * lineHeight + 32),
               textAlign: "left",
             },
-            wrap ? styles.wrap : styles.noWrap,
           ]}
           accessibilityLabel={`محرر ${file.name}`}
         />
@@ -119,8 +117,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     color: "#dbe3ee",
     fontFamily: "monospace",
+    writingDirection: "ltr",
     backgroundColor: "#0b0f16",
   },
-  noWrap: { textAlign: "left" },
-  wrap: { textAlign: "left" },
 });
