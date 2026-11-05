@@ -1,4 +1,4 @@
-name: Android APK (debug)
+name: Android APK (standalone)
 
 on:
   workflow_dispatch:
@@ -65,16 +65,24 @@ jobs:
           sed -i 's/^newArchEnabled=true$/newArchEnabled=false/' android/gradle.properties
           grep -q '^newArchEnabled=false$' android/gradle.properties
 
-      - name: Assemble installable debug APK
+      - name: Assemble installable standalone APK
         run: |
           cd android
-          ./gradlew :app:assembleDebug --no-daemon
-          test -s app/build/outputs/apk/debug/app-debug.apk
+          # Debug variants expect a Metro server and omit the JS bundle.
+          # Release is still signed with the debug keystore by build.gradle,
+          # so this remains side-loadable while working fully offline.
+          ./gradlew :app:assembleRelease --no-daemon
+          apk_path=app/build/outputs/apk/release/app-release.apk
+          test -s "$apk_path"
+          unzip -Z1 "$apk_path" | grep -Eq 'assets/.*(bundle|hbc)' || {
+            echo "The standalone APK is missing its embedded JavaScript bundle."
+            exit 1
+          }
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: reactide-android-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
