@@ -101,6 +101,22 @@ if __name__ == "__main__":
 `,
     updatedAt: now(),
   },
+  {
+    name: "ide.project.json",
+    content: `{
+  "version": 1,
+  "entry": "main.py",
+  "files": {
+    "main.py": { "role": "runtime", "language": "Python", "engine": "python-embedded" },
+    "App.jsx": { "role": "runtime", "language": "JSX", "engine": "jsx-react-compiler" },
+    "styles.css": { "role": "style", "language": "CSS", "engine": "android-webview-css" },
+    "README.md": { "role": "docs", "language": "Markdown", "engine": "markdown-renderer" }
+  },
+  "bindings": []
+}
+`,
+    updatedAt: now(),
+  },
 ];
 
 export const DEFAULT_PROJECT: IDEProject = {
