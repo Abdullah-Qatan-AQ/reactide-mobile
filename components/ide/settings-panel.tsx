@@ -35,7 +35,7 @@ export function SettingsPanel({ fontSize, onChangeFontSize, onReset }: SettingsP
         <Text style={styles.infoIcon}>i</Text>
         <View style={{ flex: 1 }}>
           <Text style={styles.infoTitle}>عن التنفيذ الأصلي</Text>
-          <Text style={styles.infoBody}>المحرر وإدارة الملفات والتخزين محلية في تطبيق React Native. المعاينة الفعلية لملفات HTML فقط؛ بقية اللغات تُحرّر كنصوص حتى يتصل runtime مناسب.</Text>
+          <Text style={styles.infoBody}>المحرر وإدارة الملفات والتخزين محلية في تطبيق React Native. المعاينة الرسومية متاحة لكل اللغات، وتسمح بمعاينة مكتبات HTTPS الخارجية داخل WebView.</Text>
         </View>
       </View>
       <Pressable style={styles.resetButton} onPress={onReset} accessibilityRole="button" accessibilityLabel="إعادة المشروع إلى القالب الأولي">

@@ -33,27 +33,27 @@ export function PreviewPanel({ file, files, running, reloadKey, onRun, onOpenEdi
             <WebView
               key={`${file.name}:${reloadKey}`}
               source={{ html, baseUrl: "about:blank" }}
-              originWhitelist={["about:blank"]}
+              originWhitelist={["about:blank", "https://*"]}
               javaScriptEnabled
               domStorageEnabled={false}
               allowFileAccess={false}
               allowUniversalAccessFromFileURLs={false}
               javaScriptCanOpenWindowsAutomatically={false}
               setSupportMultipleWindows={false}
-              onShouldStartLoadWithRequest={(request) => request.url.startsWith("about:blank")}
+              onShouldStartLoadWithRequest={(request) => request.url.startsWith("about:blank") || request.url.startsWith("https://")}
               onLoadEnd={onLoadComplete}
               style={styles.webview}
             />
             <View style={styles.deviceBottom}><View style={styles.homeBar} /></View>
           </View>
-          <View style={styles.statusCard}><View style={[styles.dot, { backgroundColor: running ? "#d29922" : "#53c68c" }]} /><View style={{ flex: 1 }}><Text style={styles.statusTitle}>{running ? `جارٍ تحديث معاينة ${language}` : `${isVisual ? "معاينة رسومية" : "معاينة غير رسومية"} · ${language}`}</Text><Text style={styles.statusBody}>المعاينة محلية؛ الاتصالات الخارجية وملفات الجهاز محظورة.</Text></View><Pressable onPress={onOpenEditor}><Text style={styles.runLink}>تحرير</Text></Pressable></View>
+          <View style={styles.statusCard}><View style={[styles.dot, { backgroundColor: running ? "#d29922" : "#53c68c" }]} /><View style={{ flex: 1 }}><Text style={styles.statusTitle}>{running ? `جارٍ تحديث معاينة ${language}` : `${isVisual ? "معاينة رسومية" : "معاينة رسومية للمكوّن"} · ${language}`}</Text><Text style={styles.statusBody}>المعاينة رسومية؛ مكتبات HTTPS الخارجية مسموحة داخل WebView.</Text></View><Pressable onPress={onOpenEditor}><Text style={styles.runLink}>تحرير</Text></Pressable></View>
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.emptyStage}>
           <View style={styles.emptyCard}>
             <View style={styles.emptyIcon}><Text style={styles.emptyIconText}>{language === "Python" ? "Py" : "{ }"}</Text></View>
-            <Text style={styles.emptyTitle}>معاينة غير رسومية</Text>
-            <Text style={styles.emptyBody}>يُعرض كود {language} بأمان دون تنفيذه محليًا، مع دعم التحديث والحفظ لكل الملفات.</Text>
+            <Text style={styles.emptyTitle}>معاينة رسومية</Text>
+            <Text style={styles.emptyBody}>يُعرض مشهد رسومي لهذا الملف مع الكود والاعتماديات المكتشفة.</Text>
             <Pressable style={styles.editButton} onPress={onOpenEditor}><Text style={styles.editButtonText}>العودة إلى المحرر</Text></Pressable>
           </View>
           <View style={styles.statusCard}><View style={[styles.dot, { backgroundColor: "#53c68c" }]} /><View style={{ flex: 1 }}><Text style={styles.statusTitle}>المعاينة متصلة</Text><Text style={styles.statusBody}>{file.name} · {language}</Text></View></View>
