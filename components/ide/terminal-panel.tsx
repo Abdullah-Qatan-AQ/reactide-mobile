@@ -15,6 +15,7 @@ type TerminalPanelProps = {
   onPackageNameChange: (value: string) => void;
   onInstall: () => void;
   authSupported: boolean;
+  localAvailable: boolean;
   authenticated: boolean;
   workspaceStatus: WorkspaceStatus | null;
   workspaceError: string;
@@ -28,9 +29,9 @@ const SAFE_PRESETS = ["pwd", "node --version", "npm --version", "pnpm --version"
 
 export function TerminalPanel({
   lines, command, running, onCommandChange, onRun, onPreset, packageName, onPackageNameChange,
-  onInstall, authSupported, authenticated, workspaceStatus, workspaceError, userName, onLogin, onLogout, onRefresh,
+  onInstall, authSupported, localAvailable, authenticated, workspaceStatus, workspaceError, userName, onLogin, onLogout, onRefresh,
 }: TerminalPanelProps) {
-  const available = Boolean(authenticated && workspaceStatus?.available);
+  const available = localAvailable || Boolean(authenticated && workspaceStatus?.available);
   return (
     <View style={styles.root}>
       <View style={styles.header}>
@@ -40,7 +41,9 @@ export function TerminalPanel({
           <Text style={[styles.statusText, available ? styles.statusTextOnline : styles.statusTextOffline]}>{available ? "RUNTIME مؤقت" : "غير متصل"}</Text>
         </View>
       </View>
-      {!authenticated ? (
+      {localAvailable ? (
+        <View style={styles.runtimeCard}><View style={{ flex: 1 }}><Text style={styles.runtimeTitle}>طرفية محلية · بدون تسجيل</Text><Text style={styles.runtimeBody}>pwd و ls و cat و echo تعمل على ملفات المشروع المحلية.</Text></View></View>
+      ) : !authenticated ? (
         <View style={styles.authCard}>
           <Text style={styles.authTitle}>سجّل الدخول لتفعيل مساحة الأوامر المحمية</Text>
           <Text style={styles.authBody}>{authSupported ? "استخدم Manus OAuth عبر معاينة الويب. مساحة runtime مؤقتة منفصلة لكل مستخدم؛ ليست shell عامة." : "تسجيل الدخول إلى runtime غير متاح على Android لأن تدفق Manus الحالي لا يوثّق PKCE للهاتف. لن نعالج رمزًا واردًا عبر رابط مخصص."}</Text>
@@ -59,7 +62,7 @@ export function TerminalPanel({
         {lines.map((line) => <Text key={line.id} style={[styles.line, line.kind === "command" && styles.command, line.kind === "error" && styles.error, line.kind === "system" && styles.system]}>{line.kind === "command" ? "$ " : ""}{line.text}</Text>)}
       </ScrollView>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presets}>
-        {SAFE_PRESETS.map((preset) => <Pressable key={preset} disabled={!available || running} style={[styles.preset, !available && styles.disabled]} onPress={() => onPreset(preset)}><Text style={styles.presetText}>{preset}</Text></Pressable>)}
+        {["pwd", "ls", "cat App.jsx", "echo مرحبا", ...SAFE_PRESETS].map((preset) => <Pressable key={preset} disabled={!available || running} style={[styles.preset, !available && styles.disabled]} onPress={() => onPreset(preset)}><Text style={styles.presetText}>{preset}</Text></Pressable>)}
       </ScrollView>
       <View style={styles.commandRow}>
         <Text style={styles.prompt}>$</Text>

@@ -52,6 +52,20 @@ describe("buildHtmlPreview", () => {
     expect(html).toContain("script-src 'self' 'unsafe-inline' https:");
   });
 
+  it("loads every project stylesheet and script into an HTML preview", () => {
+    const html = buildHtmlPreview(file("index.html", "<main id=app></main>"), [
+      file("index.html", "<main id=app></main>"),
+      file("base.css", ".base{color:red}"),
+      file("mobile.css", ".mobile{display:block}"),
+      file("main.js", "document.body.dataset.main='yes'"),
+      file("helpers.js", "window.helperLoaded=true"),
+    ]);
+    expect(html).toContain(".base{color:red}");
+    expect(html).toContain(".mobile{display:block}");
+    expect(html).toContain("document.body.dataset.main");
+    expect(html).toContain("window.helperLoaded");
+  });
+
   it("selects a language-native compiler for Python, TypeScript, and JSX", () => {
     expect(buildHtmlPreview(file("main.py", "print('ok')"), [])).toContain("pyodide");
     expect(buildHtmlPreview(file("main.ts", "const value: number = 1"), [])).toContain("typescript@5.6.3");

@@ -64,14 +64,16 @@ function inlineMarkdown(value: string): string {
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
 }
 
-function codePreview(file: IDEFile, language: IDELanguage): string {
+function codePreview(file: IDEFile, language: IDELanguage, files: IDEFile[]): string {
   const label = language === "Text" ? "نص" : language;
   const firstHeading = file.content.match(/(?:^|\n)\s*(?:return\s+)?["'`]([^"'`\n]{2,80})["'`]/)?.[1] ?? `${label} component`;
   const imports = [...file.content.matchAll(/(?:from\s+|import\s+)["']([^"']+)["']/g)].map((match) => match[1]).slice(0, 5);
   const dependencyNote = imports.length
     ? `<p class="muted">مكتبات مكتشفة: ${imports.map((name) => `<span class="chip">${escapeHtml(name)}</span>`).join(" ")}</p>`
     : `<p class="muted">لا توجد مكتبات خارجية مكتشفة في هذا الملف.</p>`;
-  const source = escapeScriptContent(JSON.stringify(file.content));
+  const sourceFiles = files.filter((candidate) => ["JavaScript", "TypeScript", "JSX", "TSX", "Python"].includes(languageForFile(candidate.name)));
+  const combinedSource = sourceFiles.map((candidate) => `\n// ---- ${candidate.name} ----\n${candidate.content.replace(/^\s*import\s+.*$/gm, "").replace(/\bexport\s+default\s+/g, "").replace(/\bexport\s+(?=(?:const|let|var|function|class|interface|type)\b)/g, "")}`).join("\n") || file.content;
+  const source = escapeScriptContent(JSON.stringify(combinedSource));
   let runtime = "";
   if (language === "Python") runtime = `
 <script type="module">
@@ -95,7 +97,7 @@ try{const compiled=${compiler};const code=externalize(${language === "JavaScript
 </script>`;
   }
   return documentShell(
-    `<main><span class="badge">${escapeHtml(label)}</span><h1>${escapeHtml(file.name)}</h1><p class="muted">معاينة رسومية مع مترجم ${escapeHtml(label)} داخل WebView.</p><section class="scene"><div class="scene-bar"><span class="live-dot"></span><strong>${escapeHtml(firstHeading)}</strong><span class="scene-tag">${escapeHtml(label)}</span></div><div class="scene-body"><div id="runtime-output" class="runtime-output"><span class="loader"></span>جارٍ تجهيز المترجم...</div></div></section>${dependencyNote}<section class="panel"><pre>${escapeHtml(file.content)}</pre></section></main>${runtime}`,
+    `<main><span class="badge">${escapeHtml(label)}</span><h1>${escapeHtml(file.name)}</h1><p class="muted">معاينة رسومية مع مترجم ${escapeHtml(label)} داخل WebView.</p><section class="scene"><div class="scene-bar"><span class="live-dot"></span><strong>${escapeHtml(firstHeading)}</strong><span class="scene-tag">${escapeHtml(label)}</span></div><div class="scene-body"><div id="runtime-output" class="runtime-output"><span class="loader"></span>جارٍ تجهيز المترجم...</div></div></section><p class="muted">ملفات مترجمة في المشروع: ${sourceFiles.map((candidate) => `<span class="chip">${escapeHtml(candidate.name)}</span>`).join(" ")}</p>${dependencyNote}<section class="panel"><pre>${escapeHtml(file.content)}</pre></section></main>${runtime}`,
     `${file.name} · ${label}`,
     `${BASE_STYLE}.scene{overflow:hidden;border:1px solid #2d3d54;border-radius:16px;background:#111823;margin:18px 0}.scene-bar{display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid #2d3d54}.live-dot{width:8px;height:8px;border-radius:50%;background:#53c68c;box-shadow:0 0 12px #53c68c}.scene-tag,.chip{padding:2px 7px;border:1px solid #2d3d54;border-radius:999px;color:#61dafb;font:11px monospace}.scene-tag{margin-right:auto}.scene-body{min-height:140px;padding:28px;background:radial-gradient(circle at 80% 10%,#1b3850,#0b0f16 55%)}.runtime-output{min-height:84px;display:grid;place-items:center;padding:16px;border-radius:12px;background:#081018;border:1px solid #2d3d54;color:#dbe3ee;font:13px/1.6 SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-word;direction:ltr;text-align:left}.runtime-output.error{color:#ff9b95;border-color:#8d3f45}.loader{width:18px;height:18px;border:2px solid #2d3d54;border-top-color:#61dafb;border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`,
   );
@@ -103,24 +105,29 @@ try{const compiled=${compiler};const code=externalize(${language === "JavaScript
 
 export function buildHtmlPreview(file: IDEFile, files: IDEFile[]): string {
   const language = languageForFile(file.name);
-  const stylesheet =
-    files.find((candidate) => candidate.name.toLowerCase().endsWith(".css"))
-      ?.content ?? "";
+  const stylesheet = files
+    .filter((candidate) => languageForFile(candidate.name) === "CSS")
+    .map((candidate) => `/* ${candidate.name} */\n${candidate.content}`)
+    .join("\n");
 
   if (language === "HTML") {
     let html = file.content;
+    const scripts = files
+      .filter((candidate) => ["JavaScript", "TypeScript"].includes(languageForFile(candidate.name)))
+      .map((candidate) => `<script type="module">// ${escapeHtml(candidate.name)}\n${escapeScriptContent(candidate.content)}</script>`)
+      .join("");
     const head = `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}">${stylesheet ? `<style>${escapeStyleContent(stylesheet)}</style>` : ""}`;
     if (!/<html\b/i.test(html))
       html = `<!doctype html><html lang="ar" dir="rtl"><head></head><body>${html}</body></html>`;
     if (/<head\b[^>]*>/i.test(html))
       html = html.replace(
         /<head\b[^>]*>/i,
-        (openingTag) => `${openingTag}${head}`,
+        (openingTag) => `${openingTag}${head}${scripts}`,
       );
     else
       html = html.replace(
         /<html\b[^>]*>/i,
-        (openingTag) => `${openingTag}<head>${head}</head>`,
+        (openingTag) => `${openingTag}<head>${head}${scripts}</head>`,
       );
     return html;
   }
@@ -155,5 +162,5 @@ export function buildHtmlPreview(file: IDEFile, files: IDEFile[]): string {
     );
   }
 
-  return codePreview(file, language);
+  return codePreview(file, language, files);
 }

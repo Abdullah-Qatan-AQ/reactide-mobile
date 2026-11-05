@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { startOAuthLogin } from "@/constants/oauth";
+import { useThemeContext } from "@/lib/theme-provider";
 import type { TerminalLine } from "@/components/ide/terminal-panel";
 import { clearGithubToken, getGithubToken, getGithubViewer, GithubRepo, GithubViewer, listGithubRepos, saveGithubToken } from "@/lib/github-api";
 import { parseImportedProject, pickProjectInput, shareProjectBundle } from "@/lib/file-transfer";
@@ -71,20 +72,21 @@ const SAFE_WORKSPACE_COMMANDS = new Set<SafeWorkspaceCommand>([
 
 export default function HomeScreen() {
   const { user, isAuthenticated, logout } = useAuth({ autoFetch: Platform.OS === "web" });
+  const { colorScheme, setColorScheme } = useThemeContext();
   // Render a usable local workspace immediately; hydrate persisted data after
   // the first frame instead of blocking the whole screen on AsyncStorage.
   const [project, setProject] = useState<IDEProject>(() => cloneDefaultProject());
   const [view, setView] = useState<IDEView>("editor");
   const [logs, setLogs] = useState<IDELog[]>([]);
   const [fontSize, setFontSize] = useState(14);
-  const dark = true;
+  const dark = colorScheme === "dark";
   const [running, setRunning] = useState(false);
   const [previewReloadKey, setPreviewReloadKey] = useState(0);
   const [saved, setSaved] = useState(true);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
-  const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([{ id: "terminal-boot", kind: "system", text: "runtime متاح في معاينة الويب بعد تسجيل الدخول؛ دخول Android غير مفعّل في هذه النسخة." }]);
+  const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([{ id: "terminal-boot", kind: "system", text: Platform.OS === "web" ? "سجّل الدخول لتشغيل أوامر runtime البعيدة." : "طرفية محلية: pwd و ls و cat و echo متاحة دون تسجيل دخول." }]);
   const [terminalCommand, setTerminalCommand] = useState("");
   const [terminalPackage, setTerminalPackage] = useState("");
   const [terminalRunning, setTerminalRunning] = useState(false);
@@ -363,7 +365,25 @@ export default function HomeScreen() {
   const runTerminal = async () => {
     const command = terminalCommand.trim();
     if (!command || terminalRunning) return;
-    if (Platform.OS !== "web" || !isAuthenticated || !workspaceStatus?.available) {
+    if (Platform.OS !== "web") {
+      const [verb, ...args] = command.split(/\s+/);
+      if (!(verb === "pwd" || verb === "ls" || verb === "echo" || verb === "cat")) {
+        setTerminalLines((lines) => [...lines, { id: `${Date.now()}-local-blocked`, kind: "error", text: "على Android تعمل الأوامر الآمنة فقط: pwd، ls، cat اسم_الملف، echo نص." }]);
+        return;
+      }
+      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-local-cmd`, kind: "command", text: command }]);
+      setTerminalCommand("");
+      const output = verb === "pwd"
+        ? `/storage/emulated/0/ReactIDE/${project.name}`
+        : verb === "ls"
+          ? project.files.map((item) => item.name).join("\n")
+          : verb === "echo"
+            ? args.join(" ")
+            : project.files.find((item) => item.name === args[0])?.content ?? `cat: ${args[0]}: الملف غير موجود`;
+      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-local-out`, kind: "output", text: output }]);
+      return;
+    }
+    if (!isAuthenticated || !workspaceStatus?.available) {
       setTerminalLines((lines) => [...lines, { id: `${Date.now()}-auth`, kind: "error", text: "runtime غير متاح على Android أو غير متصل في الويب." }]);
       return;
     }
@@ -481,10 +501,10 @@ export default function HomeScreen() {
           </View>}
           {view === "preview" && <PreviewPanel file={activeFile} files={project.files} running={running} reloadKey={previewReloadKey} onRun={runProject} onOpenEditor={() => setView("editor")} onLoadComplete={() => setRunning(false)} />}
           {view === "console" && <ConsolePanel logs={logs} />}
-          {view === "terminal" && <TerminalPanel lines={terminalLines} command={terminalCommand} running={terminalRunning} onCommandChange={setTerminalCommand} onRun={runTerminal} onPreset={setTerminalCommand} packageName={terminalPackage} onPackageNameChange={setTerminalPackage} onInstall={installPackage} authSupported={Platform.OS === "web"} authenticated={Platform.OS === "web" && isAuthenticated} workspaceStatus={workspaceStatus} workspaceError={workspaceError} userName={user?.name} onLogin={handleLogin} onLogout={handleLogout} onRefresh={refreshWorkspaceStatus} />}
+          {view === "terminal" && <TerminalPanel lines={terminalLines} command={terminalCommand} running={terminalRunning} onCommandChange={setTerminalCommand} onRun={runTerminal} onPreset={setTerminalCommand} packageName={terminalPackage} onPackageNameChange={setTerminalPackage} onInstall={installPackage} authSupported={Platform.OS === "web"} localAvailable={Platform.OS !== "web"} authenticated={Platform.OS === "web" && isAuthenticated} workspaceStatus={workspaceStatus} workspaceError={workspaceError} userName={user?.name} onLogin={handleLogin} onLogout={handleLogout} onRefresh={refreshWorkspaceStatus} />}
           {view === "files" && <FilesPanel files={project.files} activeFile={project.activeFile} onSelect={selectFile} onAdd={openAddFile} onImport={importFiles} onExport={exportFiles} onRename={openRename} onDelete={deleteFile} />}
           {view === "projects" && <ProjectsPanel project={project} externalUrl={project.sourceUrl} onExternalUrlChange={(value) => { setSaved(false); setProject({ ...project, sourceUrl: value }); }} onConnect={() => { setModalValue(project.sourceUrl); setModalKind("source"); }} onOpenUrl={openExternal} githubToken={githubToken} githubViewer={githubViewer} githubRepos={githubRepos} githubBusy={githubBusy} onGithubTokenChange={setGithubToken} onGithubConnect={connectGithub} onGithubDisconnect={disconnectGithub} />}
-          {view === "settings" && <SettingsPanel fontSize={fontSize} onChangeFontSize={setFontSize} onReset={resetProject} />}
+          {view === "settings" && <SettingsPanel fontSize={fontSize} onChangeFontSize={setFontSize} onReset={resetProject} colorScheme={colorScheme} onChangeColorScheme={setColorScheme} />}
           </Suspense>
         </View>
 
