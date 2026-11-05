@@ -57,6 +57,14 @@ jobs:
       - name: Generate the Android native project
         run: pnpm exec expo prebuild --platform android --no-install --clean
 
+      - name: Use stable Android renderer
+        run: |
+          # The app uses no custom Fabric/TurboModule code. Paper avoids
+          # startup ANRs on devices where the experimental renderer stalls
+          # before React can dismiss the native splash screen.
+          sed -i 's/^newArchEnabled=true$/newArchEnabled=false/' android/gradle.properties
+          grep -q '^newArchEnabled=false$' android/gradle.properties
+
       - name: Assemble installable debug APK
         run: |
           cd android

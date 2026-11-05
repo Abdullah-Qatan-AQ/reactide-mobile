@@ -126,7 +126,6 @@ const config: ExpoConfig & { logoUrl: string } = {
   ],
   experiments: {
     typedRoutes: true,
-    reactCompiler: true,
   },
 };
 
