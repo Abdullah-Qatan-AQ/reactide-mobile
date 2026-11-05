@@ -1,5 +1,5 @@
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -16,13 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { startOAuthLogin } from "@/constants/oauth";
-import { CodeEditor } from "@/components/ide/code-editor";
-import { ConsolePanel } from "@/components/ide/console-panel";
-import { FilesPanel } from "@/components/ide/files-panel";
-import { PreviewPanel } from "@/components/ide/preview-panel";
-import { ProjectsPanel } from "@/components/ide/projects-panel";
-import { SettingsPanel } from "@/components/ide/settings-panel";
-import { TerminalPanel, TerminalLine } from "@/components/ide/terminal-panel";
+import type { TerminalLine } from "@/components/ide/terminal-panel";
 import { clearGithubToken, getGithubToken, getGithubViewer, GithubRepo, GithubViewer, listGithubRepos, saveGithubToken } from "@/lib/github-api";
 import { parseImportedProject, pickProjectInput, shareProjectBundle } from "@/lib/file-transfer";
 import { getWorkspaceStatus, installWorkspacePackage, runWorkspaceCommand } from "@/lib/workspace-api";
@@ -44,6 +38,22 @@ import {
   starterForFile,
 } from "@/lib/ide-model";
 
+// Keep the first native frame small. WebView, editor, and the secondary IDE
+// panels are loaded only when React has already rendered the workspace or when
+// the user opens that panel. This prevents a cold Android launch from parsing
+// the entire IDE before the splash screen can be dismissed.
+const CodeEditor = lazy(() => import("@/components/ide/code-editor").then((module) => ({ default: module.CodeEditor })));
+const ConsolePanel = lazy(() => import("@/components/ide/console-panel").then((module) => ({ default: module.ConsolePanel })));
+const FilesPanel = lazy(() => import("@/components/ide/files-panel").then((module) => ({ default: module.FilesPanel })));
+const PreviewPanel = lazy(() => import("@/components/ide/preview-panel").then((module) => ({ default: module.PreviewPanel })));
+const ProjectsPanel = lazy(() => import("@/components/ide/projects-panel").then((module) => ({ default: module.ProjectsPanel })));
+const SettingsPanel = lazy(() => import("@/components/ide/settings-panel").then((module) => ({ default: module.SettingsPanel })));
+const TerminalPanel = lazy(() => import("@/components/ide/terminal-panel").then((module) => ({ default: module.TerminalPanel })));
+
+function PanelFallback() {
+  return <View style={styles.panelFallback}><Text style={styles.panelFallbackText}>جارٍ تجهيز اللوحة…</Text></View>;
+}
+
 const NAV_ITEMS: { key: IDEView; label: string; icon: string }[] = [
   { key: "editor", label: "المحرر", icon: "⌘" },
   { key: "preview", label: "المعاينة", icon: "▷" },
@@ -61,7 +71,9 @@ const SAFE_WORKSPACE_COMMANDS = new Set<SafeWorkspaceCommand>([
 
 export default function HomeScreen() {
   const { user, isAuthenticated, logout } = useAuth({ autoFetch: Platform.OS === "web" });
-  const [project, setProject] = useState<IDEProject | null>(null);
+  // Render a usable local workspace immediately; hydrate persisted data after
+  // the first frame instead of blocking the whole screen on AsyncStorage.
+  const [project, setProject] = useState<IDEProject>(() => cloneDefaultProject());
   const [view, setView] = useState<IDEView>("editor");
   const [logs, setLogs] = useState<IDELog[]>([]);
   const [fontSize, setFontSize] = useState(14);
@@ -100,11 +112,14 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    loadProject().then((loaded) => {
-      setProject(loaded);
-      setLogs([{ id: "boot", level: "success", message: `تم فتح ${loaded.name} من التخزين المحلي`, time: formatClock() }]);
-    });
-    getGithubToken().then((token) => { if (token) setGithubToken(token); }).catch(() => undefined);
+    const timer = setTimeout(() => {
+      loadProject().then((loaded) => {
+        setProject(loaded);
+        setLogs([{ id: "boot", level: "success", message: `تم فتح ${loaded.name} من التخزين المحلي`, time: formatClock() }]);
+      }).catch(() => undefined);
+      getGithubToken().then((token) => { if (token) setGithubToken(token); }).catch(() => undefined);
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const refreshWorkspaceStatus = useCallback(async () => {
@@ -455,6 +470,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.workspace}>
+          <Suspense fallback={<PanelFallback />}>
           {view === "editor" && <View style={styles.editorView}>
             <View style={[styles.fileTabs, { backgroundColor: panelBg }]}>
               {project.files.slice(0, 4).map((file) => <Pressable key={file.name} onPress={() => selectFile(file.name)} style={[styles.fileTab, project.activeFile === file.name && styles.fileTabActive]}><Text style={[styles.fileTabIcon, { color: languageTone(languageForFile(file.name)) }]}>{fileIcon(file.name)}</Text><Text style={[styles.fileTabText, project.activeFile === file.name && styles.fileTabTextActive]} numberOfLines={1}>{file.name}</Text></Pressable>)}
@@ -469,6 +485,7 @@ export default function HomeScreen() {
           {view === "files" && <FilesPanel files={project.files} activeFile={project.activeFile} onSelect={selectFile} onAdd={openAddFile} onImport={importFiles} onExport={exportFiles} onRename={openRename} onDelete={deleteFile} />}
           {view === "projects" && <ProjectsPanel project={project} externalUrl={project.sourceUrl} onExternalUrlChange={(value) => { setSaved(false); setProject({ ...project, sourceUrl: value }); }} onConnect={() => { setModalValue(project.sourceUrl); setModalKind("source"); }} onOpenUrl={openExternal} githubToken={githubToken} githubViewer={githubViewer} githubRepos={githubRepos} githubBusy={githubBusy} onGithubTokenChange={setGithubToken} onGithubConnect={connectGithub} onGithubDisconnect={disconnectGithub} />}
           {view === "settings" && <SettingsPanel fontSize={fontSize} onChangeFontSize={setFontSize} onReset={resetProject} />}
+          </Suspense>
         </View>
 
         <View style={[styles.statusbar, { backgroundColor: panelBg }]}><Text style={styles.statusText}>Ln {cursor.line}, Col {cursor.column}</Text><Text style={styles.statusDivider}>·</Text><Text style={styles.statusText}>{languageForFile(activeFile.name)}</Text><Text style={styles.statusDivider}>·</Text><Text style={[styles.statusText, { color: saved ? "#53c68c" : "#d29922" }]}>{saved ? "✓ محفوظ محليًا" : "● تعديل غير محفوظ"}</Text><Pressable style={styles.shareStatus} onPress={shareProject}><Text style={styles.shareStatusText}>مشاركة ↗</Text></Pressable></View>
@@ -523,6 +540,8 @@ const styles = StyleSheet.create({
   runButtonText: { color: "#04222e", fontSize: 11, fontWeight: "900" },
   runIcon: { color: "#04222e", fontSize: 16, fontWeight: "900" },
   workspace: { flex: 1, minHeight: 0 },
+  panelFallback: { flex: 1, backgroundColor: "#0b0f16", alignItems: "center", justifyContent: "center" },
+  panelFallbackText: { color: "#718098", fontSize: 12 },
   editorView: { flex: 1 },
   fileTabs: { minHeight: 43, paddingHorizontal: 7, flexDirection: "row", alignItems: "center", gap: 4, borderBottomWidth: 1, borderBottomColor: "#233043" },
   fileTab: { maxWidth: 132, height: 32, paddingHorizontal: 8, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 5 },
