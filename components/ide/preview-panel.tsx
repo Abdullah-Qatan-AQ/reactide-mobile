@@ -18,15 +18,15 @@ type PreviewPanelProps = {
 export function PreviewPanel({ file, files, running, reloadKey, onRun, onOpenEditor, onLoadComplete }: PreviewPanelProps) {
   const language = languageForFile(file.name);
   const html = useMemo(() => buildHtmlPreview(file, files), [file, files]);
-  const isHtml = Boolean(html);
+  const isVisual = ["HTML", "CSS", "Markdown", "JSON"].includes(language);
 
   return (
     <View style={styles.root}>
       <View style={styles.previewToolbar}>
-        <View style={styles.urlBox}><View style={[styles.dot, { backgroundColor: isHtml ? "#53c68c" : "#d29922" }]} /><Text style={styles.urlText}>{isHtml ? `local-preview://${file.name}` : "runtime://غير متصل"}</Text></View>
+        <View style={styles.urlBox}><View style={[styles.dot, { backgroundColor: "#53c68c" }]} /><Text style={styles.urlText}>local-preview://{file.name}</Text></View>
         <Pressable style={styles.refreshButton} onPress={onRun}><Text style={styles.refreshText}>{running ? "…" : "↻"}</Text></Pressable>
       </View>
-      {isHtml ? (
+      {html ? (
         <View style={styles.previewStage}>
           <View style={styles.deviceFrame}>
             <View style={styles.deviceTop}><View style={styles.camera} /></View>
@@ -46,17 +46,17 @@ export function PreviewPanel({ file, files, running, reloadKey, onRun, onOpenEdi
             />
             <View style={styles.deviceBottom}><View style={styles.homeBar} /></View>
           </View>
-          <View style={styles.statusCard}><View style={[styles.dot, { backgroundColor: running ? "#d29922" : "#53c68c" }]} /><View style={{ flex: 1 }}><Text style={styles.statusTitle}>{running ? "جارٍ تحديث معاينة HTML" : "معاينة HTML محلية"}</Text><Text style={styles.statusBody}>الاتصالات الخارجية وملفات الجهاز محظورة داخل المعاينة.</Text></View><Pressable onPress={onOpenEditor}><Text style={styles.runLink}>تحرير</Text></Pressable></View>
+          <View style={styles.statusCard}><View style={[styles.dot, { backgroundColor: running ? "#d29922" : "#53c68c" }]} /><View style={{ flex: 1 }}><Text style={styles.statusTitle}>{running ? `جارٍ تحديث معاينة ${language}` : `${isVisual ? "معاينة رسومية" : "معاينة غير رسومية"} · ${language}`}</Text><Text style={styles.statusBody}>المعاينة محلية؛ الاتصالات الخارجية وملفات الجهاز محظورة.</Text></View><Pressable onPress={onOpenEditor}><Text style={styles.runLink}>تحرير</Text></Pressable></View>
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.emptyStage}>
           <View style={styles.emptyCard}>
             <View style={styles.emptyIcon}><Text style={styles.emptyIconText}>{language === "Python" ? "Py" : "{ }"}</Text></View>
-            <Text style={styles.emptyTitle}>لا يوجد runtime لهذه اللغة</Text>
-            <Text style={styles.emptyBody}>يمكن تحرير {language} وحفظه، لكن التطبيق لا ينفذ هذا الملف محليًا. أضف ملف HTML للمعاينة داخل التطبيق أو اربط runtime خارجيًا.</Text>
+            <Text style={styles.emptyTitle}>معاينة غير رسومية</Text>
+            <Text style={styles.emptyBody}>يُعرض كود {language} بأمان دون تنفيذه محليًا، مع دعم التحديث والحفظ لكل الملفات.</Text>
             <Pressable style={styles.editButton} onPress={onOpenEditor}><Text style={styles.editButtonText}>العودة إلى المحرر</Text></Pressable>
           </View>
-          <View style={styles.statusCard}><View style={[styles.dot, { backgroundColor: "#d29922" }]} /><View style={{ flex: 1 }}><Text style={styles.statusTitle}>المعاينة غير متصلة</Text><Text style={styles.statusBody}>{file.name} · {language}</Text></View></View>
+          <View style={styles.statusCard}><View style={[styles.dot, { backgroundColor: "#53c68c" }]} /><View style={{ flex: 1 }}><Text style={styles.statusTitle}>المعاينة متصلة</Text><Text style={styles.statusBody}>{file.name} · {language}</Text></View></View>
         </ScrollView>
       )}
     </View>

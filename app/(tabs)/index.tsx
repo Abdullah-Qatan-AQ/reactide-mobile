@@ -278,14 +278,9 @@ export default function HomeScreen() {
   const runProject = () => {
     if (!project || !activeFile) return;
     setView("preview");
-    if (!/\.html?$/i.test(activeFile.name)) {
-      setRunning(false);
-      appendLog("warn", `لم يُنفّذ ${activeFile.name}: لا يوجد runtime متصل لـ ${languageForFile(activeFile.name)}.`);
-      return;
-    }
     setRunning(true);
     setPreviewReloadKey((key) => key + 1);
-    appendLog("info", `تم تحديث معاينة ${activeFile.name} داخل WebView محصور الشبكة.`);
+    appendLog("info", `تم تحديث معاينة ${activeFile.name} (${languageForFile(activeFile.name)}) داخل WebView محصور الشبكة.`);
   };
 
   const openExternal = async (rawUrl: string) => {
