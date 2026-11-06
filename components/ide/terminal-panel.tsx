@@ -70,7 +70,7 @@ export function TerminalPanel({
         <Pressable disabled={!available || running} style={[styles.exec, (!available || running) && styles.disabled]} onPress={onRun}><Text style={styles.execText}>{running ? "…" : "تشغيل"}</Text></Pressable>
       </View>
       <View style={styles.installCard}>
-        <View style={{ flex: 1 }}><Text style={styles.installTitle}>حزم runtime المؤقت</Text><Text style={styles.installBody}>مساحة منفصلة لكل مستخدم · حد 100 MB · scripts معطلة.</Text></View>
+        <View style={{ flex: 1 }}><Text style={styles.installTitle}>حزم Termux</Text><Text style={styles.installBody}>{localAvailable ? "مستودع Termux الرسمي · runtime داخل التطبيق" : "مساحة منفصلة لكل مستخدم · حد 100 MB · scripts معطلة."}</Text></View>
         <TextInput value={packageName} onChangeText={onPackageNameChange} editable={available && !running} placeholder="expo-router" placeholderTextColor="#5e6e85" autoCapitalize="none" autoCorrect={false} style={styles.packageInput} />
         <Pressable disabled={!available || running} onPress={onInstall} style={[styles.installButton, (!available || running) && styles.disabled]}><Text style={styles.installText}>＋</Text></Pressable>
       </View>

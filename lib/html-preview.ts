@@ -83,18 +83,26 @@ const packages=[...source.matchAll(/^\\s*(?:from|import)\\s+([a-zA-Z0-9_-]+)/gm)
 try{const{loadPyodide}=await import("https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.mjs");const pyodide=await loadPyodide({stdout:write,stderr:(value)=>write(value,true)});if(packages.length)await pyodide.loadPackage([...new Set(packages)]);await pyodide.runPythonAsync(source);if(!output.textContent)write("Python completed successfully");}catch(error){write(error?.stack||error,true);}
 </script>`;
   else if (language === "JavaScript" || language === "TypeScript" || language === "JSX" || language === "TSX") {
-    const compiler = language === "JavaScript"
-      ? "source"
-      : language === "TypeScript"
+    if (language === "JavaScript") {
+      runtime = `
+<script type="module">
+const source=${source};const output=document.getElementById("runtime-output");
+const write=(value,error=false)=>{output.className=error?"runtime-output error":"runtime-output";output.textContent=String(value||"(لا يوجد ناتج)");};
+const runtimeConsole={log:(...values)=>write(values.map((value)=>typeof value==="string"?value:JSON.stringify(value)).join(" ")),error:(...values)=>write(values.join(" "),true)};
+try{const executable=source.replace(/export\\s+default\\s+/g,"return ").replace(/export\\s+(?=(?:const|let|var|function|class)\\b)/g,"");const value=new Function("console",executable)(runtimeConsole);if(value!==undefined)write(typeof value==="string"?value:JSON.stringify(value,null,2));else if(!output.textContent)write("JavaScript completed successfully");}catch(error){write(error?.stack||error,true);}
+</script>`;
+    } else {
+      const compiler = language === "TypeScript"
         ? `(await import("https://esm.sh/typescript@5.6.3")).transpileModule(source,{compilerOptions:{module:1,target:7,sourceMap:false}}).outputText`
         : `(await new Promise((resolve,reject)=>{const script=document.createElement("script");script.src="https://unpkg.com/@babel/standalone/babel.min.js";script.onload=()=>resolve(window.Babel);script.onerror=reject;document.head.appendChild(script);})).transform(source,{presets:${language === "TSX" ? "[\"typescript\",\"react\"]" : "[\"react\"]"},sourceType:"module"}).code`;
-    runtime = `
+      runtime = `
 <script type="module">
 const source=${source};const output=document.getElementById("runtime-output");
 const write=(value,error=false)=>{output.className=error?"runtime-output error":"runtime-output";if(value instanceof Node)output.replaceChildren(value);else output.textContent=typeof value==="string"?value:JSON.stringify(value,null,2);};
 const externalize=(code)=>code.replace(/(from\\s*["']|import\\s*\\()["']([^"']+)["']/g,(all,prefix,name)=>{if(name.startsWith(".")||name.startsWith("/")||name.startsWith("http"))return all;return prefix+"https://esm.sh/"+name;});
-try{const compiled=${compiler};const code=externalize(${language === "JavaScript" || language === "TypeScript" ? "compiled" : "\"import React from 'https://esm.sh/react@18.3.1';import{createRoot}from 'https://esm.sh/react-dom@18.3.1/client';\\n\"+compiled"});const url=URL.createObjectURL(new Blob([code],{type:"text/javascript"}));const module=await import(url);URL.revokeObjectURL(url);const value=module.default??module;if(typeof value==="function"){const react=await import("https://esm.sh/react@18.3.1");const dom=await import("https://esm.sh/react-dom@18.3.1/client");dom.createRoot(output).render(react.createElement(value));}else write(value);}catch(error){write(error?.stack||error,true);}
+try{const compiled=${compiler};const code=externalize(${language === "TypeScript" ? "compiled" : "\"import React from 'https://esm.sh/react@18.3.1';import{createRoot}from 'https://esm.sh/react-dom@18.3.1/client';\\n\"+compiled"});const url=URL.createObjectURL(new Blob([code],{type:"text/javascript"}));const module=await import(url);URL.revokeObjectURL(url);const value=module.default??module;if(typeof value==="function"){const react=await import("https://esm.sh/react@18.3.1");const dom=await import("https://esm.sh/react-dom@18.3.1/client");dom.createRoot(output).render(react.createElement(value));}else write(value);}catch(error){write(error?.stack||error,true);}
 </script>`;
+    }
   }
   return documentShell(
     `<main><span class="badge">${escapeHtml(label)}</span><h1>${escapeHtml(file.name)}</h1><p class="muted">معاينة رسومية مع مترجم ${escapeHtml(label)} داخل WebView.</p><section class="scene"><div class="scene-bar"><span class="live-dot"></span><strong>${escapeHtml(firstHeading)}</strong><span class="scene-tag">${escapeHtml(label)}</span></div><div class="scene-body"><div id="runtime-output" class="runtime-output"><span class="loader"></span>جارٍ تجهيز المترجم...</div></div></section><p class="muted">ملفات مترجمة في المشروع: ${sourceFiles.map((candidate) => `<span class="chip">${escapeHtml(candidate.name)}</span>`).join(" ")}</p>${dependencyNote}<section class="panel"><pre>${escapeHtml(file.content)}</pre></section></main>${runtime}`,

@@ -11,7 +11,7 @@ export type RuntimeEngine = {
 };
 
 export const RUNTIME_ENGINES: Record<IDELanguage, RuntimeEngine> = {
-  JavaScript: { id: "javascript-v8", language: "JavaScript", kind: "native", android: "planned", supportsGraphics: true, supportsPackages: "npm", notes: "Dedicated JavaScript runtime; no source-language conversion." },
+  JavaScript: { id: "embedded-webview-javascript", language: "JavaScript", kind: "native", android: "available", supportsGraphics: true, supportsPackages: "npm", notes: "App-owned JavaScript runtime inside the preview WebView; no Termux or system shell." },
   TypeScript: { id: "typescript-native-compiler", language: "TypeScript", kind: "native", android: "planned", supportsGraphics: true, supportsPackages: "npm", notes: "TypeScript compiler feeds the JavaScript runtime while preserving TypeScript diagnostics." },
   JSX: { id: "jsx-react-compiler", language: "JSX", kind: "native", android: "planned", supportsGraphics: true, supportsPackages: "npm", notes: "React JSX compiler and renderer." },
   TSX: { id: "tsx-react-typescript", language: "TSX", kind: "native", android: "planned", supportsGraphics: true, supportsPackages: "npm", notes: "TypeScript plus React JSX compiler and renderer." },

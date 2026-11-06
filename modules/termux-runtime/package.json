@@ -1,0 +1,12 @@
+{
+  "name": "@reactide/termux-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/TermuxRuntime.ts",
+  "files": ["android", "src", "expo-module.config.json", "package.json"],
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

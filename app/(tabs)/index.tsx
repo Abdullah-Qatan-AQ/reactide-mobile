@@ -20,7 +20,9 @@ import { useThemeContext } from "@/lib/theme-provider";
 import type { TerminalLine } from "@/components/ide/terminal-panel";
 import { clearGithubToken, getGithubToken, getGithubViewer, GithubRepo, GithubViewer, listGithubRepos, saveGithubToken } from "@/lib/github-api";
 import { parseImportedProject, pickProjectInput, shareProjectBundle } from "@/lib/file-transfer";
+import { ensureEmbeddedRuntime } from "@/lib/embedded-runtime";
 import { getWorkspaceStatus, installWorkspacePackage, runWorkspaceCommand } from "@/lib/workspace-api";
+import { TERMUX_BOOTSTRAP_URLS, installRuntime, isRuntimeInstalled, isRuntimeNativeAvailable, runRuntimeCommand } from "@reactide/termux-runtime";
 import type { SafeWorkspaceCommand, WorkspaceStatus } from "@/lib/workspace-api";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -90,6 +92,8 @@ export default function HomeScreen() {
   const [terminalCommand, setTerminalCommand] = useState("");
   const [terminalPackage, setTerminalPackage] = useState("");
   const [terminalRunning, setTerminalRunning] = useState(false);
+  const [termuxAvailable, setTermuxAvailable] = useState(false);
+  const [termuxInstalled, setTermuxInstalled] = useState(false);
   const [workspaceStatus, setWorkspaceStatus] = useState<WorkspaceStatus | null>(null);
   const [workspaceError, setWorkspaceError] = useState("");
   const [githubToken, setGithubToken] = useState("");
@@ -122,6 +126,47 @@ export default function HomeScreen() {
       getGithubToken().then((token) => { if (token) setGithubToken(token); }).catch(() => undefined);
     }, 0);
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    ensureEmbeddedRuntime().then((runtime) => {
+      setTerminalLines((lines) => [...lines, {
+        id: `${Date.now()}-runtime-bootstrap`,
+        kind: "system",
+        text: runtime.firstRun
+          ? "تم تثبيت runtime JavaScript المضمّن داخل التطبيق. طرفية Android تستخدم Termux ومستودع حزم Termux."
+          : `runtime المضمّن جاهز (الإصدار ${runtime.version}).`,
+      }]);
+    }).catch(() => {
+      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-runtime-bootstrap-error`, kind: "error", text: "تعذر تهيئة runtime المضمّن داخل التطبيق." }]);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    let cancelled = false;
+    void (async () => {
+      if (!isRuntimeNativeAvailable()) {
+        setTerminalLines((lines) => [...lines, { id: `${Date.now()}-termux-native-missing`, kind: "error", text: "وحدة Termux الأصلية غير مضمّنة في هذا البناء." }]);
+        return;
+      }
+      setTermuxAvailable(true);
+      try {
+        if (await isRuntimeInstalled()) {
+          if (!cancelled) setTermuxInstalled(true);
+          return;
+        }
+        setTerminalLines((lines) => [...lines, { id: `${Date.now()}-termux-bootstrap`, kind: "system", text: "جارٍ تنزيل Termux Bootstrap من مستودع Termux الرسمي بعد أول تشغيل…" }]);
+        const result = await installRuntime(TERMUX_BOOTSTRAP_URLS.arm64);
+        if (!cancelled) {
+          setTermuxInstalled(true);
+          setTerminalLines((lines) => [...lines, { id: `${Date.now()}-termux-ready`, kind: "system", text: `تم تثبيت runtime Termux داخل مساحة التطبيق (${result.files} ملف).` }]);
+        }
+      } catch (error) {
+        if (!cancelled) setTerminalLines((lines) => [...lines, { id: `${Date.now()}-termux-bootstrap-error`, kind: "error", text: error instanceof Error ? error.message : "تعذر تنزيل Termux Bootstrap." }]);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const refreshWorkspaceStatus = useCallback(async () => {
@@ -366,21 +411,22 @@ export default function HomeScreen() {
     const command = terminalCommand.trim();
     if (!command || terminalRunning) return;
     if (Platform.OS !== "web") {
-      const [verb, ...args] = command.split(/\s+/);
-      if (!(verb === "pwd" || verb === "ls" || verb === "echo" || verb === "cat")) {
-        setTerminalLines((lines) => [...lines, { id: `${Date.now()}-local-blocked`, kind: "error", text: "على Android تعمل الأوامر الآمنة فقط: pwd، ls، cat اسم_الملف، echo نص." }]);
+      if (!termuxAvailable || !termuxInstalled) {
+        setTerminalLines((lines) => [...lines, { id: `${Date.now()}-termux-not-ready`, kind: "error", text: "انتظر اكتمال تثبيت Termux Bootstrap قبل تشغيل الأوامر." }]);
         return;
       }
-      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-local-cmd`, kind: "command", text: command }]);
       setTerminalCommand("");
-      const output = verb === "pwd"
-        ? `/storage/emulated/0/ReactIDE/${project.name}`
-        : verb === "ls"
-          ? project.files.map((item) => item.name).join("\n")
-          : verb === "echo"
-            ? args.join(" ")
-            : project.files.find((item) => item.name === args[0])?.content ?? `cat: ${args[0]}: الملف غير موجود`;
-      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-local-out`, kind: "output", text: output }]);
+      setTerminalRunning(true);
+      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-termux-cmd`, kind: "command", text: command }]);
+      try {
+        const result = await runRuntimeCommand(command);
+        const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n");
+        setTerminalLines((lines) => [...lines, { id: `${Date.now()}-termux-out`, kind: result.exitCode === 0 ? "output" : "error", text: output || `(exit ${result.exitCode})` }]);
+      } catch (error) {
+        setTerminalLines((lines) => [...lines, { id: `${Date.now()}-termux-err`, kind: "error", text: error instanceof Error ? error.message : "تعذر تشغيل أمر Termux" }]);
+      } finally {
+        setTerminalRunning(false);
+      }
       return;
     }
     if (!isAuthenticated || !workspaceStatus?.available) {
@@ -407,17 +453,23 @@ export default function HomeScreen() {
   const installPackage = async () => {
     const packageName = terminalPackage.trim();
     if (!packageName || terminalRunning) return;
-    if (Platform.OS !== "web" || !isAuthenticated || !workspaceStatus?.available) {
-      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-auth`, kind: "error", text: "تنزيل الحزم غير متاح على Android أو قبل اتصال runtime في الويب." }]);
-      return;
-    }
     setTerminalRunning(true);
-    setTerminalLines((lines) => [...lines, { id: `${Date.now()}-install`, kind: "command", text: `pnpm add --ignore-scripts --save-exact ${packageName}` }]);
+    setTerminalLines((lines) => [...lines, { id: `${Date.now()}-install`, kind: "command", text: Platform.OS === "web" ? `pnpm add --ignore-scripts --save-exact ${packageName}` : `pkg install -y ${packageName}` }]);
     setTerminalPackage("");
     try {
-      const result = await installWorkspacePackage(packageName);
-      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-install-out`, kind: "output", text: result.output || result.note || "تم تنزيل الحزمة" }]);
-      appendLog("success", result.note || `تم تنزيل ${packageName} إلى runtime المؤقت`);
+      if (Platform.OS !== "web") {
+        if (!termuxAvailable || !termuxInstalled) throw new Error("Termux runtime غير جاهز بعد.");
+        const result = await runRuntimeCommand(`pkg install -y ${packageName}`);
+        const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n");
+        if (result.exitCode !== 0) throw new Error(output || `فشل تثبيت ${packageName} من مستودع Termux.`);
+        setTerminalLines((lines) => [...lines, { id: `${Date.now()}-install-out`, kind: "output", text: output || `تم تثبيت ${packageName} من مستودع Termux.` }]);
+        appendLog("success", `تم تثبيت ${packageName} من مستودع Termux`);
+      } else {
+        if (!isAuthenticated || !workspaceStatus?.available) throw new Error("سجّل الدخول أولًا لتفعيل runtime الويب.");
+        const result = await installWorkspacePackage(packageName);
+        setTerminalLines((lines) => [...lines, { id: `${Date.now()}-install-out`, kind: "output", text: result.output || result.note || "تم تنزيل الحزمة" }]);
+        appendLog("success", result.note || `تم تنزيل ${packageName} إلى runtime المؤقت`);
+      }
     } catch (error) {
       setTerminalLines((lines) => [...lines, { id: `${Date.now()}-install-err`, kind: "error", text: error instanceof Error ? error.message : "تعذر تنزيل الحزمة" }]);
     } finally {
@@ -501,7 +553,7 @@ export default function HomeScreen() {
           </View>}
           {view === "preview" && <PreviewPanel file={activeFile} files={project.files} running={running} reloadKey={previewReloadKey} onRun={runProject} onOpenEditor={() => setView("editor")} onLoadComplete={() => setRunning(false)} />}
           {view === "console" && <ConsolePanel logs={logs} />}
-          {view === "terminal" && <TerminalPanel lines={terminalLines} command={terminalCommand} running={terminalRunning} onCommandChange={setTerminalCommand} onRun={runTerminal} onPreset={setTerminalCommand} packageName={terminalPackage} onPackageNameChange={setTerminalPackage} onInstall={installPackage} authSupported={Platform.OS === "web"} localAvailable={Platform.OS !== "web"} authenticated={Platform.OS === "web" && isAuthenticated} workspaceStatus={workspaceStatus} workspaceError={workspaceError} userName={user?.name} onLogin={handleLogin} onLogout={handleLogout} onRefresh={refreshWorkspaceStatus} />}
+          {view === "terminal" && <TerminalPanel lines={terminalLines} command={terminalCommand} running={terminalRunning} onCommandChange={setTerminalCommand} onRun={runTerminal} onPreset={setTerminalCommand} packageName={terminalPackage} onPackageNameChange={setTerminalPackage} onInstall={installPackage} authSupported={Platform.OS === "web"} localAvailable={Platform.OS !== "web" && termuxAvailable && termuxInstalled} authenticated={Platform.OS === "web" && isAuthenticated} workspaceStatus={workspaceStatus} workspaceError={workspaceError} userName={user?.name} onLogin={handleLogin} onLogout={handleLogout} onRefresh={refreshWorkspaceStatus} />}
           {view === "files" && <FilesPanel files={project.files} activeFile={project.activeFile} onSelect={selectFile} onAdd={openAddFile} onImport={importFiles} onExport={exportFiles} onRename={openRename} onDelete={deleteFile} />}
           {view === "projects" && <ProjectsPanel project={project} externalUrl={project.sourceUrl} onExternalUrlChange={(value) => { setSaved(false); setProject({ ...project, sourceUrl: value }); }} onConnect={() => { setModalValue(project.sourceUrl); setModalKind("source"); }} onOpenUrl={openExternal} githubToken={githubToken} githubViewer={githubViewer} githubRepos={githubRepos} githubBusy={githubBusy} onGithubTokenChange={setGithubToken} onGithubConnect={connectGithub} onGithubDisconnect={disconnectGithub} />}
           {view === "settings" && <SettingsPanel fontSize={fontSize} onChangeFontSize={setFontSize} onReset={resetProject} colorScheme={colorScheme} onChangeColorScheme={setColorScheme} />}

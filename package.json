@@ -19,6 +19,7 @@
     "qr": "node scripts/generate_qr.mjs"
   },
   "dependencies": {
+    "@reactide/termux-runtime": "file:modules/termux-runtime",
     "@expo/metro-runtime": "~57.0.17",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
