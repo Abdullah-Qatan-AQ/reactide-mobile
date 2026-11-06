@@ -16,6 +16,7 @@ type TerminalPanelProps = {
   onInstall: () => void;
   authSupported: boolean;
   localAvailable: boolean;
+  packageRuntimeAvailable: boolean;
   authenticated: boolean;
   workspaceStatus: WorkspaceStatus | null;
   workspaceError: string;
@@ -29,20 +30,21 @@ const SAFE_PRESETS = ["pwd", "node --version", "npm --version", "pnpm --version"
 
 export function TerminalPanel({
   lines, command, running, onCommandChange, onRun, onPreset, packageName, onPackageNameChange,
-  onInstall, authSupported, localAvailable, authenticated, workspaceStatus, workspaceError, userName, onLogin, onLogout, onRefresh,
+  onInstall, authSupported, localAvailable, packageRuntimeAvailable, authenticated, workspaceStatus, workspaceError, userName, onLogin, onLogout, onRefresh,
 }: TerminalPanelProps) {
   const available = localAvailable || Boolean(authenticated && workspaceStatus?.available);
+  const presets = localAvailable ? ["pwd", "ls", "cat App.jsx", "echo مرحبا", "help", "clear"] : SAFE_PRESETS;
   return (
     <View style={styles.root}>
       <View style={styles.header}>
         <View><Text style={styles.kicker}>WORKSPACE SHELL</Text><Text style={styles.title}>الطرفية</Text></View>
         <View style={[styles.status, available ? styles.statusOnline : styles.statusOffline]}>
           <View style={[styles.statusDot, available ? styles.statusDotOnline : styles.statusDotOffline]} />
-          <Text style={[styles.statusText, available ? styles.statusTextOnline : styles.statusTextOffline]}>{available ? "RUNTIME مؤقت" : "غير متصل"}</Text>
+          <Text style={[styles.statusText, available ? styles.statusTextOnline : styles.statusTextOffline]}>{localAvailable ? "محلي · بلا تسجيل" : available ? "RUNTIME مؤقت" : "غير متصل"}</Text>
         </View>
       </View>
       {localAvailable ? (
-        <View style={styles.runtimeCard}><View style={{ flex: 1 }}><Text style={styles.runtimeTitle}>طرفية محلية · بدون تسجيل</Text><Text style={styles.runtimeBody}>pwd و ls و cat و echo تعمل على ملفات المشروع المحلية.</Text></View></View>
+        <View style={styles.runtimeCard}><View style={{ flex: 1 }}><Text style={styles.runtimeTitle}>أوامر محلية · بلا تسجيل أو تنزيل</Text><Text style={styles.runtimeBody}>pwd و ls و cat و echo و help و clear تعمل مباشرةً على ملفات المشروع المحفوظة.</Text></View></View>
       ) : !authenticated ? (
         <View style={styles.authCard}>
           <Text style={styles.authTitle}>سجّل الدخول لتفعيل مساحة الأوامر المحمية</Text>
@@ -62,17 +64,17 @@ export function TerminalPanel({
         {lines.map((line) => <Text key={line.id} style={[styles.line, line.kind === "command" && styles.command, line.kind === "error" && styles.error, line.kind === "system" && styles.system]}>{line.kind === "command" ? "$ " : ""}{line.text}</Text>)}
       </ScrollView>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presets}>
-        {["pwd", "ls", "cat App.jsx", "echo مرحبا", ...SAFE_PRESETS].map((preset) => <Pressable key={preset} disabled={!available || running} style={[styles.preset, !available && styles.disabled]} onPress={() => onPreset(preset)}><Text style={styles.presetText}>{preset}</Text></Pressable>)}
+        {presets.map((preset) => <Pressable key={preset} disabled={!available || running} style={[styles.preset, !available && styles.disabled]} onPress={() => onPreset(preset)}><Text style={styles.presetText}>{preset}</Text></Pressable>)}
       </ScrollView>
       <View style={styles.commandRow}>
         <Text style={styles.prompt}>$</Text>
-        <TextInput value={command} onChangeText={onCommandChange} onSubmitEditing={onRun} editable={available && !running} placeholder="اختر أمر فحص معتمدًا…" placeholderTextColor="#5e6e85" autoCapitalize="none" autoCorrect={false} style={styles.commandInput} />
+        <TextInput value={command} onChangeText={onCommandChange} onSubmitEditing={onRun} editable={available && !running} placeholder={localAvailable ? "pwd · ls · cat App.jsx · echo…" : "اختر أمر فحص معتمدًا…"} placeholderTextColor="#5e6e85" autoCapitalize="none" autoCorrect={false} style={styles.commandInput} />
         <Pressable disabled={!available || running} style={[styles.exec, (!available || running) && styles.disabled]} onPress={onRun}><Text style={styles.execText}>{running ? "…" : "تشغيل"}</Text></Pressable>
       </View>
       <View style={styles.installCard}>
-        <View style={{ flex: 1 }}><Text style={styles.installTitle}>حزم Termux</Text><Text style={styles.installBody}>{localAvailable ? "مستودع Termux الرسمي · runtime داخل التطبيق" : "مساحة منفصلة لكل مستخدم · حد 100 MB · scripts معطلة."}</Text></View>
-        <TextInput value={packageName} onChangeText={onPackageNameChange} editable={available && !running} placeholder="expo-router" placeholderTextColor="#5e6e85" autoCapitalize="none" autoCorrect={false} style={styles.packageInput} />
-        <Pressable disabled={!available || running} onPress={onInstall} style={[styles.installButton, (!available || running) && styles.disabled]}><Text style={styles.installText}>＋</Text></Pressable>
+        <View style={{ flex: 1 }}><Text style={styles.installTitle}>حزم اختيارية</Text><Text style={styles.installBody}>{packageRuntimeAvailable ? localAvailable ? "Termux جاهز · التثبيت اختياري" : "مساحة runtime الويب متصلة." : localAvailable ? "غير مطلوبة للأوامر المحلية؛ لا يوجد تنزيل تلقائي." : "سجّل الدخول لمساحة منفصلة · scripts معطلة."}</Text></View>
+        {packageRuntimeAvailable && <><TextInput value={packageName} onChangeText={onPackageNameChange} editable={!running} placeholder="اسم الحزمة" placeholderTextColor="#5e6e85" autoCapitalize="none" autoCorrect={false} style={styles.packageInput} />
+        <Pressable disabled={running} onPress={onInstall} style={[styles.installButton, running && styles.disabled]}><Text style={styles.installText}>＋</Text></Pressable></>}
       </View>
     </View>
   );

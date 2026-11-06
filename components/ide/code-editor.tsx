@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { IDEFile, languageForFile, languageTone } from "@/lib/ide-model";
 
 type CodeEditorProps = { file: IDEFile; fontSize: number; onChange: (content: string) => void; onCursorChange: (line: number, column: number) => void };
@@ -46,8 +46,8 @@ export function CodeEditor({ file, fontSize, onChange, onCursorChange }: CodeEdi
     <View style={styles.editorBody}>
       <ScrollView style={styles.gutterScroll} contentContainerStyle={{ paddingVertical: 16 }} showsVerticalScrollIndicator={false} scrollEnabled={false}>{lines.map((_, index) => <Text key={`${file.name}-${index}`} style={[styles.lineNumber, { fontSize, lineHeight }]}>{index + 1}</Text>)}</ScrollView>
       <View style={styles.editorSurface}>
-        <ScrollView style={styles.highlightScroll} contentContainerStyle={styles.codePadding} showsVerticalScrollIndicator={false}><HighlightedCode content={file.content} language={language} fontSize={fontSize} lineHeight={lineHeight} /></ScrollView>
-        <TextInput ref={inputRef} value={file.content} onChangeText={onChange} onSelectionChange={(event) => handleSelection(event.nativeEvent.selection.start)} multiline spellCheck={false} autoCorrect={false} textAlignVertical="top" scrollEnabled selectionColor="#61dafb" style={[styles.input, { fontSize, lineHeight, minHeight: Math.max(260, lines.length * lineHeight + 32) }]} accessibilityLabel={`محرر ${file.name}`} />
+        {Platform.OS === "web" && <ScrollView style={styles.highlightScroll} contentContainerStyle={styles.codePadding} showsVerticalScrollIndicator={false}><HighlightedCode content={file.content} language={language} fontSize={fontSize} lineHeight={lineHeight} /></ScrollView>}
+        <TextInput ref={inputRef} value={file.content} onChangeText={onChange} onSelectionChange={(event) => handleSelection(event.nativeEvent.selection.start)} multiline spellCheck={false} autoCorrect={false} textAlignVertical="top" scrollEnabled selectionColor="#61dafb" style={[styles.input, { color: Platform.OS === "web" ? "transparent" : COLORS.plain, fontSize, lineHeight, minHeight: Math.max(260, lines.length * lineHeight + 32) }]} accessibilityLabel={`محرر ${file.name}`} />
       </View>
     </View>
   </View>;

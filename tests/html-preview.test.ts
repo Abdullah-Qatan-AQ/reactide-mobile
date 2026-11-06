@@ -66,6 +66,19 @@ describe("buildHtmlPreview", () => {
     expect(html).toContain("window.helperLoaded");
   });
 
+  it("applies project CSS to the app-component preview without mixing Python into browser source", () => {
+    const html = buildHtmlPreview(file("App.jsx", "export default function App(){return <h1 className=\"screen\">hello</h1>}"), [
+      file("App.jsx", "export default function App(){return <h1 className=\"screen\">hello</h1>}"),
+      file("styles.css", ".screen{color:rebeccapurple}"),
+      file("helper.js", "export function helper(){return 1}"),
+      file("main.py", "print('should not be bundled')"),
+    ]);
+    expect(html).toContain(".screen{color:rebeccapurple}");
+    expect(html).toContain("export default function App");
+    expect(html).toContain("function helper");
+    expect(html).not.toContain("should not be bundled");
+  });
+
   it("selects a language-native compiler for Python, TypeScript, and JSX", () => {
     expect(buildHtmlPreview(file("main.py", "print('ok')"), [])).toContain("pyodide");
     expect(buildHtmlPreview(file("main.ts", "const value: number = 1"), [])).toContain("typescript@5.6.3");

@@ -10,14 +10,31 @@ type PreviewPanelProps = {
   files: IDEFile[];
   running: boolean;
   reloadKey: number;
+  expanded: boolean;
   onRun: () => void;
   onOpenEditor: () => void;
+  onToggleExpanded: () => void;
   onLoadComplete: () => void;
 };
 
-export function PreviewPanel({ file, files, running, reloadKey, onRun, onOpenEditor, onLoadComplete }: PreviewPanelProps) {
-  const [selectedName, setSelectedName] = useState(file.name);
-  const previewFile = files.find((candidate) => candidate.name === selectedName) ?? file;
+const ENTRY_NAMES = ["index.html", "App.jsx", "App.tsx", "app.jsx", "app.tsx", "index.jsx", "index.tsx", "main.jsx", "main.tsx", "main.js", "index.js", "main.ts"];
+
+function projectEntry(files: IDEFile[], active: IDEFile): IDEFile {
+  const htmlFiles = files.filter((candidate) => languageForFile(candidate.name) === "HTML");
+  const htmlEntry = htmlFiles.find((candidate) => candidate.name.toLowerCase() === "index.html") ?? htmlFiles[0];
+  if (htmlEntry) return htmlEntry;
+  for (const name of ENTRY_NAMES.slice(1)) {
+    const match = files.find((candidate) => candidate.name.toLowerCase() === name.toLowerCase());
+    if (match) return match;
+  }
+  const visualOrRunnable = files.find((candidate) => ["JavaScript", "TypeScript", "JSX", "TSX", "CSS", "Markdown", "JSON", "Python"].includes(languageForFile(candidate.name)));
+  return visualOrRunnable ?? active;
+}
+
+export function PreviewPanel({ file, files, running, reloadKey, expanded, onRun, onOpenEditor, onToggleExpanded, onLoadComplete }: PreviewPanelProps) {
+  const [selectedName, setSelectedName] = useState<string | null>(null);
+  const defaultEntry = projectEntry(files, file);
+  const previewFile = files.find((candidate) => candidate.name === selectedName) ?? defaultEntry;
   const language = languageForFile(previewFile.name);
   const html = useMemo(() => buildHtmlPreview(previewFile, files), [previewFile, files]);
   const isVisual = ["HTML", "CSS", "Markdown", "JSON"].includes(language);
@@ -25,70 +42,56 @@ export function PreviewPanel({ file, files, running, reloadKey, onRun, onOpenEdi
   return (
     <View style={styles.root}>
       <View style={styles.previewToolbar}>
-        <View style={styles.urlBox}><View style={[styles.dot, { backgroundColor: "#53c68c" }]} /><Text style={styles.urlText}>local-preview://{previewFile.name}</Text></View>
-        <Pressable style={styles.refreshButton} onPress={onRun}><Text style={styles.refreshText}>{running ? "…" : "↻"}</Text></Pressable>
+        <View style={styles.urlBox}><View style={styles.onlineDot} /><Text style={styles.urlText} numberOfLines={1}>مشروع كامل · {previewFile.name}</Text></View>
+        <Pressable accessibilityRole="button" accessibilityLabel="تحديث المعاينة" style={styles.refreshButton} onPress={onRun}><Text style={styles.refreshText}>{running ? "…" : "↻"}</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={expanded ? "تصغير المعاينة" : "تكبير المعاينة"} style={styles.expandButton} onPress={onToggleExpanded}><Text style={styles.expandText}>{expanded ? "↙" : "⛶"}</Text></Pressable>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filePicker}>
-        {files.map((candidate) => <Pressable key={candidate.name} onPress={() => setSelectedName(candidate.name)} style={[styles.fileChip, candidate.name === previewFile.name && styles.fileChipActive]}><Text style={[styles.fileChipText, candidate.name === previewFile.name && styles.fileChipTextActive]}>{candidate.name}</Text></Pressable>)}
+        {files.map((candidate) => <Pressable accessibilityRole="button" key={candidate.name} onPress={() => setSelectedName(candidate.name)} style={[styles.fileChip, candidate.name === previewFile.name && styles.fileChipActive]}><Text style={[styles.fileChipText, candidate.name === previewFile.name && styles.fileChipTextActive]} numberOfLines={1}>{candidate.name}</Text></Pressable>)}
       </ScrollView>
-      {html ? (
-        <View style={styles.previewStage}>
-            <WebView
-              key={`${previewFile.name}:${reloadKey}`}
-              source={{ html, baseUrl: "about:blank" }}
-              originWhitelist={["about:blank", "https://*"]}
-              javaScriptEnabled
-              domStorageEnabled
-              allowFileAccess={false}
-              allowUniversalAccessFromFileURLs={false}
-              javaScriptCanOpenWindowsAutomatically={false}
-              setSupportMultipleWindows={false}
-              onShouldStartLoadWithRequest={(request) => request.url.startsWith("about:blank") || request.url.startsWith("https://")}
-              onLoadEnd={onLoadComplete}
-              style={styles.webview}
-            />
-          <View style={styles.statusCard}><View style={[styles.dot, { backgroundColor: running ? "#d29922" : "#53c68c" }]} /><View style={{ flex: 1 }}><Text style={styles.statusTitle}>{running ? `جارٍ تحديث معاينة ${language}` : `${isVisual ? "معاينة رسومية" : "معاينة رسومية للمكوّن"} · ${language}`}</Text><Text style={styles.statusBody}>تضم المعاينة ملفات المشروع، ويمكن اختيار أي ملف من الشريط أعلاه.</Text></View><Pressable onPress={onOpenEditor}><Text style={styles.runLink}>تحرير</Text></Pressable></View>
+      <View style={styles.previewStage}>
+        <WebView
+          key={`${previewFile.name}:${reloadKey}`}
+          source={{ html, baseUrl: "about:blank" }}
+          originWhitelist={["about:blank", "https://*"]}
+          javaScriptEnabled
+          domStorageEnabled
+          allowFileAccess={false}
+          allowUniversalAccessFromFileURLs={false}
+          javaScriptCanOpenWindowsAutomatically={false}
+          setSupportMultipleWindows={false}
+          onShouldStartLoadWithRequest={(request) => request.url.startsWith("about:blank") || request.url.startsWith("https://")}
+          onLoadEnd={onLoadComplete}
+          style={styles.webview}
+        />
+        <View pointerEvents="box-none" style={styles.statusOverlay}>
+          <View style={styles.statusCard}><View style={[styles.onlineDot, running && styles.busyDot]} /><Text style={styles.statusTitle} numberOfLines={1}>{running ? `يتم تشغيل ${language}` : `${isVisual ? "معاينة رسومية" : "معاينة المشروع"} · ${language}`}</Text><Pressable onPress={onOpenEditor}><Text style={styles.runLink}>تحرير</Text></Pressable></View>
         </View>
-      ) : (
-        <ScrollView contentContainerStyle={styles.emptyStage}>
-          <View style={styles.emptyCard}>
-            <View style={styles.emptyIcon}><Text style={styles.emptyIconText}>{language === "Python" ? "Py" : "{ }"}</Text></View>
-            <Text style={styles.emptyTitle}>معاينة رسومية</Text>
-            <Text style={styles.emptyBody}>يُعرض مشهد رسومي لهذا الملف مع الكود والاعتماديات المكتشفة.</Text>
-            <Pressable style={styles.editButton} onPress={onOpenEditor}><Text style={styles.editButtonText}>العودة إلى المحرر</Text></Pressable>
-          </View>
-          <View style={styles.statusCard}><View style={[styles.dot, { backgroundColor: "#53c68c" }]} /><View style={{ flex: 1 }}><Text style={styles.statusTitle}>المعاينة متصلة</Text><Text style={styles.statusBody}>{file.name} · {language}</Text></View></View>
-        </ScrollView>
-      )}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#0b0f16" },
-  previewToolbar: { height: 54, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, backgroundColor: "#111823", borderBottomWidth: 1, borderBottomColor: "#233043" },
-  urlBox: { flex: 1, height: 34, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: "#2d3d54", backgroundColor: "#0b0f16", flexDirection: "row", alignItems: "center", gap: 8 },
-  dot: { width: 7, height: 7, borderRadius: 4 },
-  urlText: { color: "#8b98ab", fontFamily: "monospace", fontSize: 10 },
-  refreshButton: { width: 36, height: 36, borderRadius: 10, backgroundColor: "#1e2938", alignItems: "center", justifyContent: "center" },
-  refreshText: { color: "#61dafb", fontSize: 20, fontWeight: "700" },
-  filePicker: { gap: 7, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: "#0f151f", borderBottomWidth: 1, borderBottomColor: "#233043" },
-  fileChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: "#2d3d54" },
+  previewToolbar: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 10, backgroundColor: "#111823", borderBottomWidth: 1, borderBottomColor: "#233043" },
+  urlBox: { flex: 1, minWidth: 0, height: 34, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: "#2d3d54", backgroundColor: "#0b0f16", flexDirection: "row", alignItems: "center", gap: 8 },
+  onlineDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#53c68c" },
+  busyDot: { backgroundColor: "#d29922" },
+  urlText: { flex: 1, color: "#8b98ab", fontFamily: "monospace", fontSize: 10 },
+  refreshButton: { width: 34, height: 34, borderRadius: 10, backgroundColor: "#1e2938", alignItems: "center", justifyContent: "center" },
+  expandButton: { width: 34, height: 34, borderRadius: 10, backgroundColor: "rgba(97,218,251,.16)", alignItems: "center", justifyContent: "center" },
+  refreshText: { color: "#61dafb", fontSize: 19, fontWeight: "700" },
+  expandText: { color: "#61dafb", fontSize: 19, fontWeight: "700" },
+  filePicker: { gap: 6, paddingHorizontal: 8, paddingVertical: 6, backgroundColor: "#0f151f", borderBottomWidth: 1, borderBottomColor: "#233043" },
+  fileChip: { maxWidth: 150, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: "#2d3d54" },
   fileChipActive: { backgroundColor: "rgba(97,218,251,.15)", borderColor: "#61dafb" },
   fileChipText: { color: "#8190a7", fontFamily: "monospace", fontSize: 10 },
   fileChipTextActive: { color: "#61dafb", fontWeight: "800" },
-  previewStage: { flex: 1, minHeight: 0, backgroundColor: "#fff" },
+  previewStage: { flex: 1, minHeight: 0, backgroundColor: "#fff", position: "relative" },
   webview: { flex: 1, backgroundColor: "#fff" },
-  emptyStage: { flexGrow: 1, alignItems: "center", justifyContent: "center", padding: 18, gap: 14 },
-  emptyCard: { width: "100%", maxWidth: 390, padding: 22, borderRadius: 18, borderWidth: 1, borderColor: "#2d3d54", backgroundColor: "#111823", alignItems: "center" },
-  emptyIcon: { width: 52, height: 52, borderRadius: 15, backgroundColor: "#1e2938", alignItems: "center", justifyContent: "center", marginBottom: 14 },
-  emptyIconText: { color: "#61dafb", fontWeight: "900", fontFamily: "monospace", fontSize: 14 },
-  emptyTitle: { color: "#f4f8fc", fontWeight: "800", textAlign: "center", fontSize: 16 },
-  emptyBody: { color: "#91a1b7", textAlign: "center", lineHeight: 20, fontSize: 12, marginTop: 10 },
-  editButton: { marginTop: 18, borderRadius: 11, backgroundColor: "#61dafb", paddingHorizontal: 16, paddingVertical: 11 },
-  editButtonText: { color: "#04222e", fontWeight: "800", fontSize: 12 },
-  statusCard: { width: "100%", maxWidth: 390, padding: 13, borderRadius: 14, borderWidth: 1, borderColor: "#233043", backgroundColor: "#111823", flexDirection: "row", alignItems: "center", gap: 10 },
-  statusTitle: { color: "#dbe3ee", fontWeight: "700", fontSize: 12 },
-  statusBody: { color: "#64738a", fontSize: 10, marginTop: 3 },
-  runLink: { color: "#61dafb", fontWeight: "800", fontSize: 12 },
+  statusOverlay: { position: "absolute", bottom: 8, left: 8, right: 8, alignItems: "center" },
+  statusCard: { maxWidth: 440, width: "100%", paddingHorizontal: 11, paddingVertical: 9, borderRadius: 12, borderWidth: 1, borderColor: "#233043", backgroundColor: "rgba(17,24,35,.94)", flexDirection: "row", alignItems: "center", gap: 8 },
+  statusTitle: { flex: 1, color: "#dbe3ee", fontWeight: "700", fontSize: 11 },
+  runLink: { color: "#61dafb", fontWeight: "800", fontSize: 11 },
 });
