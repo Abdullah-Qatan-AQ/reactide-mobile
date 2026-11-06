@@ -62,7 +62,7 @@ const config: ExpoConfig & { logoUrl: string } = {
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
-  userInterfaceStyle: "automatic",
+  userInterfaceStyle: "dark",
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
@@ -88,6 +88,7 @@ const config: ExpoConfig & { logoUrl: string } = {
   },
   plugins: [
     "expo-asset",
+    ["expo-navigation-bar", { enforceContrast: false, style: "dark" }],
     "expo-router",
     [
       "expo-audio",

@@ -40,7 +40,7 @@ const ROLE_BY_LANGUAGE: Record<IDELanguage, ProjectFileRole> = {
   Text: "text",
 };
 
-const ENTRY_PRIORITY: IDELanguage[] = ["Python", "TypeScript", "TSX", "JavaScript", "JSX", "HTML"];
+const ENTRY_PRIORITY: IDELanguage[] = ["HTML", "TSX", "JSX", "TypeScript", "JavaScript", "Python"];
 
 export const PROJECT_MANIFEST_FILE = "ide.project.json";
 

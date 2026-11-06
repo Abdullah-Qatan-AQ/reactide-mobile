@@ -105,7 +105,7 @@ if __name__ == "__main__":
     name: "ide.project.json",
     content: `{
   "version": 1,
-  "entry": "main.py",
+  "entry": "App.jsx",
   "files": {
     "main.py": { "role": "runtime", "language": "Python", "engine": "python-embedded" },
     "App.jsx": { "role": "runtime", "language": "JSX", "engine": "jsx-react-compiler" },

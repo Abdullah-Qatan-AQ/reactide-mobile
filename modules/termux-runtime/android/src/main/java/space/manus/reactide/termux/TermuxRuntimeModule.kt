@@ -20,6 +20,10 @@ private const val MAX_PROJECT_BYTES = 4_000_000
 class RuntimeInstallException(message: String, cause: Throwable? = null) : CodedException(message, cause)
 
 class TermuxRuntimeModule : Module() {
+  private val shellLock = Any()
+  @Volatile private var shellProcess: Process? = null
+  @Volatile private var shellOutputThread: Thread? = null
+
   private val context: Context
     get() = appContext.reactContext ?: throw RuntimeInstallException("React context غير متاح")
 
@@ -28,6 +32,7 @@ class TermuxRuntimeModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("TermuxRuntime")
+    Events("onShellOutput", "onShellExit")
 
     AsyncFunction("isInstalled") { root.resolve(MARKER).isFile && prefix.resolve("bin/sh").canExecute() }
 
@@ -62,6 +67,91 @@ class TermuxRuntimeModule : Module() {
       workspace.absolutePath
     }
 
+    AsyncFunction("prepareShell") { promise: Promise ->
+      Thread {
+        try {
+          val script = prefix.resolve("bin/script")
+          if (!script.canExecute()) {
+            val result = runCommand("pkg update -y && pkg install -y bash util-linux", workspace)
+            if (result.third != 0 || !script.canExecute()) {
+              throw RuntimeInstallException("تعذر تثبيت shell تفاعلي من مستودع Termux (exit ${result.third}): ${(result.second + "\n" + result.first).takeLast(1200)}")
+            }
+          }
+          promise.resolve(mapOf("ready" to true, "pty" to script.absolutePath))
+        } catch (error: Throwable) {
+          promise.reject("ERR_RUNTIME_SHELL", error.message ?: "تعذر تجهيز طرفية Termux", error)
+        }
+      }.start()
+    }
+
+    AsyncFunction("startShell") { cwd: String? ->
+      synchronized(shellLock) {
+        if (shellProcess?.isAlive == true) return@synchronized mapOf("started" to true, "reused" to true)
+        if (!root.resolve(MARKER).isFile) throw RuntimeInstallException("بيئة Termux لم تكتمل بعد")
+        val script = prefix.resolve("bin/script")
+        val bash = prefix.resolve("bin/bash")
+        if (!script.canExecute() || !bash.canExecute()) throw RuntimeInstallException("لم تُجهّز حزم bash وutil-linux بعد")
+        val workDir = cwd?.let { File(it).canonicalFile }?.takeIf { it.isDirectory && it.path.startsWith(context.filesDir.canonicalPath) } ?: workspace
+        workDir.mkdirs()
+        val builder = ProcessBuilder(script.absolutePath, "-q", "-e", "-f", "-c", "${bash.absolutePath} --login -i", "/dev/null")
+          .directory(workDir)
+          .redirectErrorStream(true)
+        val env = builder.environment()
+        env["PREFIX"] = prefix.absolutePath
+        env["TERMUX_PREFIX"] = prefix.absolutePath
+        env["HOME"] = File(root, "home").absolutePath
+        env["TMPDIR"] = File(root, "tmp").absolutePath
+        env["PATH"] = listOf(prefix.resolve("bin"), prefix.resolve("bin/applets"), File("/system/bin"), File("/system/xbin")).joinToString(File.pathSeparator)
+        env["LD_LIBRARY_PATH"] = prefix.resolve("lib").absolutePath
+        env["LANG"] = "C.UTF-8"
+        env["TERM"] = "xterm-256color"
+        env["COLORTERM"] = "truecolor"
+        env["LINES"] = "24"
+        env["COLUMNS"] = "80"
+        env["ANDROID_ROOT"] = "/system"
+        env["ANDROID_DATA"] = "/data"
+        val process = builder.start()
+        shellProcess = process
+        shellOutputThread = Thread {
+          try {
+            val reader = process.inputStream.bufferedReader(Charsets.UTF_8)
+            val buffer = CharArray(4096)
+            while (true) {
+              val count = reader.read(buffer)
+              if (count < 0) break
+              if (count == 0) continue
+              val text = String(buffer, 0, count)
+                .replace(Regex("\u001B\\[[0-?]*[ -/]*[@-~]"), "")
+                .replace("\u0007", "")
+              if (text.isNotEmpty()) sendEvent("onShellOutput", mapOf("text" to text))
+            }
+          } catch (_: Throwable) {
+          } finally {
+            val code = try { process.waitFor() } catch (_: Throwable) { -1 }
+            synchronized(shellLock) { if (shellProcess === process) shellProcess = null }
+            try { sendEvent("onShellExit", mapOf("exitCode" to code)) } catch (_: Throwable) { }
+          }
+        }.apply { name = "TermuxPtyOutput"; isDaemon = true; start() }
+        mapOf("started" to true, "reused" to false)
+      }
+    }
+
+    AsyncFunction("writeShell") { input: String ->
+      val process = synchronized(shellLock) { shellProcess?.takeIf { it.isAlive } }
+        ?: throw RuntimeInstallException("جلسة Termux غير متصلة؛ افتح الطرفية لإعادة تشغيلها")
+      process.outputStream.write(input.toByteArray(Charsets.UTF_8))
+      process.outputStream.flush()
+      true
+    }
+
+    AsyncFunction("stopShell") {
+      synchronized(shellLock) {
+        shellProcess?.destroy()
+        shellProcess = null
+      }
+      true
+    }
+
     AsyncFunction("run") { command: String, cwd: String?, promise: Promise ->
       Thread {
         try {
@@ -73,6 +163,15 @@ class TermuxRuntimeModule : Module() {
           promise.reject("ERR_RUNTIME_COMMAND", error.message ?: "تعذر تشغيل الأمر", error)
         }
       }.start()
+    }
+
+    OnDestroy {
+      synchronized(shellLock) {
+        shellProcess?.destroy()
+        shellProcess = null
+      }
+      shellOutputThread?.interrupt()
+      shellOutputThread = null
     }
   }
 
@@ -89,7 +188,7 @@ class TermuxRuntimeModule : Module() {
     env["TERMUX_PREFIX"] = prefix.absolutePath
     env["HOME"] = File(root, "home").absolutePath
     env["TMPDIR"] = File(root, "tmp").absolutePath
-    env["PATH"] = listOf(prefix.resolve("bin"), prefix.resolve("bin/applets")).joinToString(File.pathSeparator)
+    env["PATH"] = listOf(prefix.resolve("bin"), prefix.resolve("bin/applets"), File("/system/bin"), File("/system/xbin")).joinToString(File.pathSeparator)
     env["LD_LIBRARY_PATH"] = prefix.resolve("lib").absolutePath
     env["LANG"] = "C.UTF-8"
     env["TERM"] = "xterm-256color"

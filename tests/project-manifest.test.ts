@@ -6,9 +6,9 @@ import { engineForLanguage } from "../lib/runtime-engines";
 const file = (name: string, content = ""): IDEFile => ({ name, content, updatedAt: 0 });
 
 describe("project manifest", () => {
-  it("discovers a Python entry and assigns roles by language", () => {
+  it("discovers the HTML app entry before a companion Python script and assigns roles by language", () => {
     const manifest = inferProjectManifest([file("index.html"), file("styles.css"), file("main.py"), file("data.json")]);
-    expect(manifest.entry).toBe("main.py");
+    expect(manifest.entry).toBe("index.html");
     expect(manifest.files["main.py"]?.role).toBe("runtime");
     expect(manifest.files["index.html"]?.role).toBe("view");
     expect(manifest.files["styles.css"]?.role).toBe("style");

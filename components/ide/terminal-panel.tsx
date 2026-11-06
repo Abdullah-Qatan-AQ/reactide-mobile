@@ -1,4 +1,5 @@
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useRef } from "react";
 
 import { WorkspaceStatus } from "@/lib/workspace-api";
 
@@ -10,6 +11,7 @@ type TerminalPanelProps = {
   running: boolean;
   onCommandChange: (value: string) => void;
   onRun: () => void;
+  onInterrupt: () => void;
   onPreset: (command: string) => void;
   packageName: string;
   onPackageNameChange: (value: string) => void;
@@ -17,8 +19,11 @@ type TerminalPanelProps = {
   authSupported: boolean;
   localAvailable: boolean;
   packageRuntimeAvailable: boolean;
+  localSessionReady: boolean;
   runtimeInstalling: boolean;
   runtimeStatus: string;
+  onRetryRuntime: () => void;
+  onReconnectShell: () => void;
   authenticated: boolean;
   workspaceStatus: WorkspaceStatus | null;
   workspaceError: string;
@@ -31,22 +36,23 @@ type TerminalPanelProps = {
 const SAFE_PRESETS = ["pwd", "node --version", "npm --version", "pnpm --version", "python3 --version"];
 
 export function TerminalPanel({
-  lines, command, running, onCommandChange, onRun, onPreset, packageName, onPackageNameChange,
-  onInstall, authSupported, localAvailable, packageRuntimeAvailable, runtimeInstalling, runtimeStatus, authenticated, workspaceStatus, workspaceError, userName, onLogin, onLogout, onRefresh,
+  lines, command, running, onCommandChange, onRun, onInterrupt, onPreset, packageName, onPackageNameChange,
+  onInstall, authSupported, localAvailable, packageRuntimeAvailable, localSessionReady, runtimeInstalling, runtimeStatus, onRetryRuntime, onReconnectShell, authenticated, workspaceStatus, workspaceError, userName, onLogin, onLogout, onRefresh,
 }: TerminalPanelProps) {
-  const available = (localAvailable && packageRuntimeAvailable) || Boolean(authenticated && workspaceStatus?.available);
+  const available = (localAvailable && packageRuntimeAvailable && localSessionReady) || Boolean(authenticated && workspaceStatus?.available);
+  const outputRef = useRef<ScrollView>(null);
   const presets = localAvailable ? ["pwd", "ls -la", "cat App.jsx", "pkg update -y", "pkg install -y python", "python --version"] : SAFE_PRESETS;
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <View><Text style={styles.kicker}>WORKSPACE SHELL</Text><Text style={styles.title}>الطرفية</Text></View>
+          <View><Text style={styles.kicker}>{localAvailable ? "TERMUX SHELL" : "WORKSPACE SHELL"}</Text><Text style={styles.title}>الطرفية</Text></View>
         <View style={[styles.status, available ? styles.statusOnline : styles.statusOffline]}>
           <View style={[styles.statusDot, available ? styles.statusDotOnline : styles.statusDotOffline]} />
-          <Text style={[styles.statusText, available ? styles.statusTextOnline : styles.statusTextOffline]}>{localAvailable ? packageRuntimeAvailable ? "Termux · متصل" : runtimeInstalling ? "تثبيت Termux…" : "Termux · غير جاهز" : available ? "RUNTIME مؤقت" : "غير متصل"}</Text>
+          <Text style={[styles.statusText, available ? styles.statusTextOnline : styles.statusTextOffline]}>{localAvailable ? !packageRuntimeAvailable ? runtimeInstalling ? "تجهيز Termux…" : "Termux · غير جاهز" : localSessionReady ? "Termux · متصل" : runtimeInstalling ? "فتح جلسة PTY…" : "shell غير متصل" : available ? "RUNTIME مؤقت" : "غير متصل"}</Text>
         </View>
       </View>
       {localAvailable ? (
-        <View style={styles.runtimeCard}><View style={{ flex: 1 }}><Text style={styles.runtimeTitle}>بيئة Termux مستقلة داخل التطبيق</Text><Text style={styles.runtimeBody}>{runtimeStatus || "تشغيل أوامر Linux وpkg عبر sh مع ملفات المشروع داخل /workspace."}</Text></View></View>
+        <View style={styles.runtimeCard}><View style={{ flex: 1 }}><Text style={styles.runtimeTitle}>حزم Termux الرسمية · جلسة Bash تفاعلية</Text><Text style={styles.runtimeBody}>{runtimeStatus || "جارٍ تجهيز حزم Termux الرسمية لمساحة المشروع."}</Text></View>{!packageRuntimeAvailable && !runtimeInstalling && <Pressable onPress={onRetryRuntime} style={styles.smallAction}><Text style={styles.smallActionText}>إعادة التثبيت</Text></Pressable>}{packageRuntimeAvailable && !localSessionReady && !runtimeInstalling && <Pressable onPress={onReconnectShell} style={styles.smallAction}><Text style={styles.smallActionText}>إعادة فتح shell</Text></Pressable>}</View>
       ) : !authenticated ? (
         <View style={styles.authCard}>
           <Text style={styles.authTitle}>سجّل الدخول لتفعيل مساحة الأوامر المحمية</Text>
@@ -62,7 +68,7 @@ export function TerminalPanel({
           {available ? <Pressable onPress={onLogout} style={styles.smallAction}><Text style={styles.smallActionText}>خروج</Text></Pressable> : <Pressable onPress={onRefresh} style={styles.smallAction}><Text style={styles.smallActionText}>إعادة المحاولة</Text></Pressable>}
         </View>
       )}
-      <ScrollView style={styles.output} contentContainerStyle={styles.outputContent}>
+      <ScrollView ref={outputRef} style={styles.output} contentContainerStyle={styles.outputContent} onContentSizeChange={() => outputRef.current?.scrollToEnd({ animated: true })}>
         {lines.map((line) => <Text key={line.id} style={[styles.line, line.kind === "command" && styles.command, line.kind === "error" && styles.error, line.kind === "system" && styles.system]}>{line.kind === "command" ? "$ " : ""}{line.text}</Text>)}
       </ScrollView>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presets}>
@@ -71,12 +77,13 @@ export function TerminalPanel({
       <View style={styles.commandRow}>
         <Text style={styles.prompt}>$</Text>
         <TextInput value={command} onChangeText={onCommandChange} onSubmitEditing={onRun} editable={available && !running} placeholder={localAvailable ? "اكتب أمر Termux أو Linux…" : "اختر أمر فحص معتمدًا…"} placeholderTextColor="#5e6e85" autoCapitalize="none" autoCorrect={false} style={styles.commandInput} />
+        {localAvailable && <Pressable disabled={!localSessionReady} onPress={onInterrupt} style={[styles.interrupt, !localSessionReady && styles.disabled]}><Text style={styles.interruptText}>^C</Text></Pressable>}
         <Pressable disabled={!available || running} style={[styles.exec, (!available || running) && styles.disabled]} onPress={onRun}><Text style={styles.execText}>{running ? "…" : "تشغيل"}</Text></Pressable>
       </View>
       <View style={styles.installCard}>
         <View style={{ flex: 1 }}><Text style={styles.installTitle}>{localAvailable ? "حزم مستودع Termux" : "حزم runtime"}</Text><Text style={styles.installBody}>{packageRuntimeAvailable ? localAvailable ? "pkg install يستخدم مستودعات Termux الرسمية فقط." : "مساحة runtime الويب متصلة." : localAvailable ? "ستتاح أوامر pkg بعد اكتمال التثبيت الأول." : "سجّل الدخول لمساحة منفصلة · scripts معطلة."}</Text></View>
-        {packageRuntimeAvailable && <><TextInput value={packageName} onChangeText={onPackageNameChange} editable={!running} placeholder="اسم الحزمة" placeholderTextColor="#5e6e85" autoCapitalize="none" autoCorrect={false} style={styles.packageInput} />
-        <Pressable disabled={running} onPress={onInstall} style={[styles.installButton, running && styles.disabled]}><Text style={styles.installText}>＋</Text></Pressable></>}
+        {packageRuntimeAvailable && <><TextInput value={packageName} onChangeText={onPackageNameChange} editable={available && !running} placeholder="اسم الحزمة" placeholderTextColor="#5e6e85" autoCapitalize="none" autoCorrect={false} style={styles.packageInput} />
+        <Pressable disabled={!available || running} onPress={onInstall} style={[styles.installButton, (!available || running) && styles.disabled]}><Text style={styles.installText}>＋</Text></Pressable></>}
       </View>
     </View>
   );
@@ -119,6 +126,8 @@ const styles = StyleSheet.create({
   commandRow: { minHeight: 53, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "#111823", borderTopWidth: 1, borderTopColor: "#233043" },
   prompt: { color: "#53c68c", fontFamily: "monospace", fontWeight: "800" },
   commandInput: { flex: 1, color: "#f0f5fb", fontFamily: "monospace", fontSize: 12 },
+  interrupt: { paddingHorizontal: 9, height: 34, borderRadius: 9, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#40536e" },
+  interruptText: { color: "#ff8f8a", fontSize: 11, fontWeight: "800", fontFamily: "monospace" },
   exec: { paddingHorizontal: 12, height: 34, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: "#61dafb" },
   execText: { color: "#04222e", fontSize: 11, fontWeight: "900" },
   installCard: { minHeight: 66, paddingHorizontal: 12, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#18212e", borderTopWidth: 1, borderTopColor: "#2d3d54" },

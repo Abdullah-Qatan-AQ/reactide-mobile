@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { IDEFile } from "../lib/ide-model";
-import { buildHtmlPreview } from "../lib/html-preview";
+import { buildHtmlPreview, projectPreviewEntry } from "../lib/html-preview";
 
 const file = (name: string, content = `content for ${name}`): IDEFile => ({
   name,
@@ -29,16 +29,14 @@ describe("buildHtmlPreview", () => {
     "main.py",
     "notes.txt",
   ])("builds a graphical preview for %s", (name) => {
-    const html = buildHtmlPreview(file(name, "<script>alert('x')</script>"), [
-      file(name),
-    ]);
+    const source = name === "notes.txt" ? "<script>alert('x')</script>" : name === "main.py" ? "print('ok')" : name.endsWith(".tsx") || name.endsWith(".jsx") ? "export default function App(){return <h1>app</h1>}" : "export default function App(){return 'app'}";
+    const html = buildHtmlPreview(file(name, source), [file(name, source)]);
     expect(html).toContain("<!doctype html>");
-    expect(html).toContain("معاينة رسومية مع مترجم");
-    expect(html).toContain("runtime-output");
-    expect(html).toContain("&lt;script&gt;");
+    if (name === "notes.txt") expect(html).toContain("&lt;script&gt;");
     if (name !== "notes.txt") {
       expect(html).toContain("<script type=\"module\">");
-      expect(html).not.toContain("</script>alert");
+      expect(html).toContain("runtime-output");
+      if (name !== "main.py") expect(html).toContain("export default");
     }
   });
 
@@ -49,7 +47,7 @@ describe("buildHtmlPreview", () => {
     ]);
     expect(html).toContain("main{color:red}");
     expect(html).toContain("connect-src https:");
-    expect(html).toContain("script-src 'self' 'unsafe-inline' https:");
+    expect(html).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval' https:");
   });
 
   it("loads every project stylesheet and script into an HTML preview", () => {
@@ -79,9 +77,30 @@ describe("buildHtmlPreview", () => {
     expect(html).not.toContain("should not be bundled");
   });
 
+  it("uses the React app as the project entry and bundles its imported component and every project stylesheet", () => {
+    const files = [
+      file("App.jsx", "import Card from './Card'; import './theme.css'; export default function App(){return <Card/>}"),
+      file("Card.jsx", "export default function Card(){return <h1>built from multiple files</h1>}"),
+      file("theme.css", ".card{color:cyan}"),
+      file("extra.css", ".screen{display:grid}"),
+      file("main.py", "print('not the web app')"),
+      file("ide.project.json", JSON.stringify({ version: 1, entry: "main.py", files: { "App.jsx": { role: "runtime" }, "Card.jsx": { role: "runtime" }, "theme.css": { role: "style" }, "main.py": { role: "runtime" } }, bindings: [] })),
+      file("README.md", "project docs"),
+    ];
+    const entry = projectPreviewEntry(files, files[4]);
+    expect(entry.name).toBe("App.jsx");
+    const html = buildHtmlPreview(entry, files);
+    expect(html).toContain("Card.jsx");
+    expect(html).toContain("import Card from './Card'");
+    expect(html).toContain(".card{color:cyan}");
+    expect(html).toContain(".screen{display:grid}");
+    expect(html).not.toContain("not the web app");
+    expect(html).not.toContain("project docs");
+  });
+
   it("selects a language-native compiler for Python, TypeScript, and JSX", () => {
     expect(buildHtmlPreview(file("main.py", "print('ok')"), [])).toContain("pyodide");
-    expect(buildHtmlPreview(file("main.ts", "const value: number = 1"), [])).toContain("typescript@5.6.3");
+    expect(buildHtmlPreview(file("main.ts", "const value: number = 1"), [])).toContain("language\":\"TypeScript");
     expect(buildHtmlPreview(file("App.tsx", "export default () => <h1>ok</h1>"), [])).toContain("babel/standalone");
   });
 });

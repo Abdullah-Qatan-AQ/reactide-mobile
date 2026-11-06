@@ -1,16 +1,12 @@
 import type { IDEFile, IDELanguage } from "./ide-model";
 import { languageForFile } from "./ide-model";
+import { manifestForProject } from "./project-manifest";
 
 const CONTENT_SECURITY_POLICY =
-  "default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' https: data: blob:; font-src 'self' https: data:; connect-src https:; object-src 'none'; frame-src https:; form-action 'none'; base-uri 'none'";
+  "default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: blob:; style-src 'self' 'unsafe-inline' https:; img-src 'self' https: data: blob:; font-src 'self' https: data:; connect-src https:; object-src 'none'; frame-src https:; form-action 'none'; base-uri 'none'";
 
 function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 function escapeStyleContent(value: string): string {
@@ -22,10 +18,10 @@ function escapeScriptContent(value: string): string {
 }
 
 function documentShell(body: string, title: string, stylesheet = ""): string {
-  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}"><title>${escapeHtml(title)}</title><style>${escapeStyleContent(stylesheet)}</style></head><body>${body}</body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"><meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}"><title>${escapeHtml(title)}</title><style>${escapeStyleContent(stylesheet)}</style></head><body>${body}</body></html>`;
 }
 
-const BASE_STYLE = `*{box-sizing:border-box}body{margin:0;padding:20px;background:#0b0f16;color:#dbe3ee;font-family:system-ui,-apple-system,sans-serif;line-height:1.7}main{max-width:760px;margin:0 auto}.badge{display:inline-block;padding:3px 9px;border:1px solid #2d3d54;border-radius:999px;color:#61dafb;font:12px monospace}h1{margin:12px 0 4px;font-size:24px}p{color:#91a1b7}.panel{padding:16px;border:1px solid #2d3d54;border-radius:14px;background:#111823}pre{margin:0;overflow:auto;white-space:pre-wrap;word-break:break-word;font:13px/1.65 SFMono-Regular,Menlo,monospace;color:#dbe3ee;direction:ltr;text-align:left}.key{color:#61dafb}.muted{color:#718198;font-size:12px}.md h2{font-size:19px;border-bottom:1px solid #2d3d54;padding-bottom:6px}.md code{color:#f2c94c;background:#1e2938;padding:2px 5px;border-radius:4px}.md ul{padding-right:22px}`;
+const BASE_STYLE = `*{box-sizing:border-box}html,body,#root{min-height:100%;margin:0}body{padding:20px;background:#0b0f16;color:#dbe3ee;font-family:system-ui,-apple-system,sans-serif;line-height:1.7}main{max-width:760px;margin:0 auto}.badge{display:inline-block;padding:3px 9px;border:1px solid #2d3d54;border-radius:999px;color:#61dafb;font:12px monospace}h1{margin:12px 0 4px;font-size:24px}p{color:#91a1b7}.panel{padding:16px;border:1px solid #2d3d54;border-radius:14px;background:#111823}pre{margin:0;overflow:auto;white-space:pre-wrap;word-break:break-word;font:13px/1.65 SFMono-Regular,Menlo,monospace;color:#dbe3ee;direction:ltr;text-align:left}.muted{color:#718198;font-size:12px}.md h2{font-size:19px;border-bottom:1px solid #2d3d54;padding-bottom:6px}.md code{color:#f2c94c;background:#1e2938;padding:2px 5px;border-radius:4px}.md ul{padding-right:22px}`;
 
 function markdownBody(source: string): string {
   const lines = source.split(/\r?\n/);
@@ -34,23 +30,14 @@ function markdownBody(source: string): string {
   for (const line of lines) {
     const value = line.trim();
     if (!value) {
-      if (inList) {
-        output.push("</ul>");
-        inList = false;
-      }
+      if (inList) { output.push("</ul>"); inList = false; }
       continue;
     }
-    if (value.startsWith("### "))
-      output.push(`<h3>${inlineMarkdown(value.slice(4))}</h3>`);
-    else if (value.startsWith("## "))
-      output.push(`<h2>${inlineMarkdown(value.slice(3))}</h2>`);
-    else if (value.startsWith("# "))
-      output.push(`<h1>${inlineMarkdown(value.slice(2))}</h1>`);
+    if (value.startsWith("### ")) output.push(`<h3>${inlineMarkdown(value.slice(4))}</h3>`);
+    else if (value.startsWith("## ")) output.push(`<h2>${inlineMarkdown(value.slice(3))}</h2>`);
+    else if (value.startsWith("# ")) output.push(`<h1>${inlineMarkdown(value.slice(2))}</h1>`);
     else if (/^[-*] /.test(value)) {
-      if (!inList) {
-        output.push("<ul>");
-        inList = true;
-      }
+      if (!inList) { output.push("<ul>"); inList = true; }
       output.push(`<li>${inlineMarkdown(value.slice(2))}</li>`);
     } else output.push(`<p>${inlineMarkdown(value)}</p>`);
   }
@@ -59,122 +46,95 @@ function markdownBody(source: string): string {
 }
 
 function inlineMarkdown(value: string): string {
-  return escapeHtml(value)
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  return escapeHtml(value).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
 }
 
-function codePreview(file: IDEFile, language: IDELanguage, files: IDEFile[], projectStyles: string): string {
-  const label = language === "Text" ? "نص" : language;
-  const firstHeading = file.content.match(/(?:^|\n)\s*(?:return\s+)?["'`]([^"'`\n]{2,80})["'`]/)?.[1] ?? `${label} component`;
-  const imports = [...file.content.matchAll(/(?:from\s+|import\s+)["']([^"']+)["']/g)].map((match) => match[1]).slice(0, 5);
-  const dependencyNote = imports.length
-    ? `<p class="muted">مكتبات مكتشفة: ${imports.map((name) => `<span class="chip">${escapeHtml(name)}</span>`).join(" ")}</p>`
-    : `<p class="muted">لا توجد مكتبات خارجية مكتشفة في هذا الملف.</p>`;
-  const sourceFiles = files.filter((candidate) => ["JavaScript", "TypeScript", "JSX", "TSX"].includes(languageForFile(candidate.name)));
-  const combinedSource = sourceFiles.map((candidate) => {
-    const source = candidate.content.replace(/^\s*import\s+.*$/gm, "");
-    const normalized = candidate.name === file.name
-      ? source.replace(/\bexport\s+(?=(?:const|let|var|function|class|interface|type)\b)/g, "")
-      : source.replace(/\bexport\s+default\s+/g, "").replace(/\bexport\s+(?=(?:const|let|var|function|class|interface|type)\b)/g, "");
-    return `\n// ---- ${candidate.name} ----\n${normalized}`;
-  }).join("\n") || file.content;
-  const source = escapeScriptContent(JSON.stringify(combinedSource));
-  let runtime = "";
-  if (language === "Python") runtime = `
-<script type="module">
-const source=${source};const output=document.getElementById("runtime-output");
-const write=(value,error=false)=>{output.className=error?"runtime-output error":"runtime-output";output.textContent=String(value||"(لا يوجد ناتج)");};
-const packages=[...source.matchAll(/^\\s*(?:from|import)\\s+([a-zA-Z0-9_-]+)/gm)].map((match)=>match[1]).filter((name)=>["numpy","pandas","matplotlib","scipy","sympy","micropip"].includes(name));
-try{const{loadPyodide}=await import("https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.mjs");const pyodide=await loadPyodide({stdout:write,stderr:(value)=>write(value,true)});if(packages.length)await pyodide.loadPackage([...new Set(packages)]);await pyodide.runPythonAsync(source);if(!output.textContent)write("Python completed successfully");}catch(error){write(error?.stack||error,true);}
+function isWebModule(file: IDEFile): boolean {
+  return ["JavaScript", "TypeScript", "JSX", "TSX"].includes(languageForFile(file.name));
+}
+
+function projectModules(files: IDEFile[], entry: IDEFile): IDEFile[] {
+  const sources = files.some((file) => file.name === entry.name) ? files : [...files, entry];
+  const manifest = manifestForProject({ id: "preview", name: "preview", files: sources, activeFile: entry.name, sourceUrl: "", sourceType: "local", updatedAt: 0 });
+  return sources.filter((file) => isWebModule(file) && manifest.files[file.name]?.role !== "docs" && manifest.files[file.name]?.role !== "text");
+}
+
+function moduleRunner(modules: IDEFile[], entryName: string, roots: string[] = [entryName]): string {
+  const serialized = escapeScriptContent(JSON.stringify(Object.fromEntries(modules.map((file) => [file.name, { content: file.content, language: languageForFile(file.name) }]))));
+  const rootsJson = JSON.stringify(roots);
+  const entryJson = JSON.stringify(entryName);
+  return `<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script><script type="module">
+const files=${serialized};const roots=${rootsJson};const entry=${entryJson};const cache=new Map();const externals=new Map();
+const localSpecifiers=new Set();for(const file of Object.values(files)){for(const match of file.content.matchAll(/(?:from\\s*|import\\s*\\()\\s*[\"']([^\"']+)[\"']/g)){if(match[1].startsWith('.')||match[1].startsWith('/')||match[1].startsWith('@/'))localSpecifiers.add(match[1]);}}
+const externalNames=new Set(['react','react-dom/client']);for(const file of Object.values(files)){for(const match of file.content.matchAll(/(?:from\\s*|import\\s*\\()\\s*[\"']([^\"']+)[\"']/g)){const name=match[1];if(!name.startsWith('.')&&!name.startsWith('/')&&!name.startsWith('@/'))externalNames.add(name);}}
+try{
+ await Promise.all([...externalNames].map(async(name)=>{const path=name==='react'?'react@19.2.3':name==='react-dom/client'?'react-dom@19.2.3/client?external=react':name;externals.set(name,await import('https://esm.sh/'+path));}));
+ const normalize=(name)=>{const parts=[];for(const part of name.replace(/^@\\//,'').split('/')){if(!part||part==='.')continue;if(part==='..')parts.pop();else parts.push(part);}return parts.join('/');};
+ const candidates=(name)=>{const base=normalize(name);return [base,base+'.js',base+'.jsx',base+'.ts',base+'.tsx',base+'.mjs',base+'/index.js',base+'/index.jsx',base+'/index.ts',base+'/index.tsx'];};
+ const resolve=(specifier,parent)=>{if(specifier.endsWith('.css'))return {css:true};const requested=specifier.startsWith('@/')?specifier.slice(2):specifier.startsWith('.')?normalize(parent.split('/').slice(0,-1).concat(specifier).join('/')):specifier;for(const candidate of candidates(requested)){if(files[candidate])return {id:candidate};}if(externals.has(specifier))return {external:specifier};throw new Error('تعذر العثور على الوحدة '+specifier+' المستوردة من '+parent);};
+ const load=(id)=>{if(cache.has(id))return cache.get(id).exports;const file=files[id];if(!file)throw new Error('ملف مشروع غير موجود: '+id);const module={exports:{}};cache.set(id,module);const preset=file.language==='JSX'?['react']:file.language==='TSX'?['typescript','react']:file.language==='TypeScript'?['typescript']:[];const compiled=Babel.transform(file.content,{filename:id,presets:preset,plugins:['transform-modules-commonjs'],sourceType:'module',babelrc:false,configFile:false}).code;const requireModule=(specifier)=>{const target=resolve(specifier,id);if(target.css)return {};if(target.id)return load(target.id);return externals.get(target.external);};new Function('require','module','exports',compiled)(requireModule,module,module.exports);return module.exports;};
+ const rootExports=[];for(const root of roots){if(files[root])rootExports.push([root,load(root)]);}
+ const appModule=rootExports.find(([name])=>name===entry)?.[1]??rootExports[0]?.[1];let app=appModule?.default??appModule?.App??appModule;
+ if(typeof app==='function'||(app&&typeof app==='object'&&app.$$typeof)){const React=externals.get('react')?.default??externals.get('react');const ReactDOM=externals.get('react-dom/client');let host=document.querySelector('#root,#app,[data-app-root]');if(!host){host=document.createElement('div');host.id='root';document.body.appendChild(host);}ReactDOM.createRoot(host).render(typeof app==='function'?React.createElement(app):app);}
+}catch(error){document.body.innerHTML='<pre style="white-space:pre-wrap;color:#ff8f8a;background:#0b0f16;padding:20px;font:14px monospace"></pre>';document.querySelector('pre').textContent=error?.stack||String(error);}
 </script>`;
-  else if (language === "JavaScript" || language === "TypeScript" || language === "JSX" || language === "TSX") {
-    if (language === "JavaScript") {
-      runtime = `
-<script type="module">
-const source=${source};const output=document.getElementById("runtime-output");
-const write=(value,error=false)=>{output.className=error?"runtime-output error":"runtime-output";output.textContent=String(value||"(لا يوجد ناتج)");};
-const runtimeConsole={log:(...values)=>write(values.map((value)=>typeof value==="string"?value:JSON.stringify(value)).join(" ")),error:(...values)=>write(values.join(" "),true)};
-try{const executable=source.replace(/export\\s+default\\s+/g,"return ").replace(/export\\s+(?=(?:const|let|var|function|class)\\b)/g,"");const value=new Function("console",executable)(runtimeConsole);if(value!==undefined)write(typeof value==="string"?value:JSON.stringify(value,null,2));else if(!output.textContent)write("JavaScript completed successfully");}catch(error){write(error?.stack||error,true);}
-</script>`;
-    } else {
-      const compiler = language === "TypeScript"
-        ? `(await import("https://esm.sh/typescript@5.6.3")).transpileModule(source,{compilerOptions:{module:1,target:7,sourceMap:false}}).outputText`
-        : `(await new Promise((resolve,reject)=>{const script=document.createElement("script");script.src="https://unpkg.com/@babel/standalone/babel.min.js";script.onload=()=>resolve(window.Babel);script.onerror=reject;document.head.appendChild(script);})).transform(source,{presets:${language === "TSX" ? "[\"typescript\",\"react\"]" : "[\"react\"]"},sourceType:"module"}).code`;
-      runtime = `
-<script type="module">
-const source=${source};const output=document.getElementById("runtime-output");
-const write=(value,error=false)=>{output.className=error?"runtime-output error":"runtime-output";if(value instanceof Node)output.replaceChildren(value);else output.textContent=typeof value==="string"?value:JSON.stringify(value,null,2);};
-const externalize=(code)=>code.replace(/(from\\s*["']|import\\s*\\()["']([^"']+)["']/g,(all,prefix,name)=>{if(name.startsWith(".")||name.startsWith("/")||name.startsWith("http"))return all;return prefix+"https://esm.sh/"+name;});
-try{const compiled=${compiler};const code=externalize(${language === "TypeScript" ? "compiled" : "\"import React from 'https://esm.sh/react@18.3.1';import{createRoot}from 'https://esm.sh/react-dom@18.3.1/client';\\n\"+compiled"});const url=URL.createObjectURL(new Blob([code],{type:"text/javascript"}));const module=await import(url);URL.revokeObjectURL(url);const value=module.default??module;if(typeof value==="function"){const react=await import("https://esm.sh/react@18.3.1");const dom=await import("https://esm.sh/react-dom@18.3.1/client");dom.createRoot(output).render(react.createElement(value));}else write(value);}catch(error){write(error?.stack||error,true);}
-</script>`;
-    }
+}
+
+function codePreview(file: IDEFile, files: IDEFile[], projectStyles: string): string {
+  if (languageForFile(file.name) === "Python") {
+    const source = escapeScriptContent(JSON.stringify(file.content));
+    const runtime = `<script type="module">const output=document.getElementById('runtime-output');try{const{loadPyodide}=await import('https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.mjs');const py=await loadPyodide({stdout:(x)=>output.textContent+=x+'\\n',stderr:(x)=>output.textContent+=x+'\\n'});await py.runPythonAsync(${source});}catch(e){output.textContent=e?.stack||String(e);output.style.color='#ff8f8a';}</script>`;
+    return documentShell(`<pre id="runtime-output" style="white-space:pre-wrap">جارٍ تشغيل Python...</pre>${runtime}`, file.name, `${BASE_STYLE}#runtime-output{padding:18px;background:#080c12;color:#dbe3ee}`);
   }
-  return documentShell(
-    `<main><span class="badge">${escapeHtml(label)}</span><h1>${escapeHtml(file.name)}</h1><p class="muted">معاينة رسومية مع مترجم ${escapeHtml(label)} داخل WebView.</p><section class="scene"><div class="scene-bar"><span class="live-dot"></span><strong>${escapeHtml(firstHeading)}</strong><span class="scene-tag">${escapeHtml(label)}</span></div><div class="scene-body"><div id="runtime-output" class="runtime-output"><span class="loader"></span>جارٍ تجهيز المترجم...</div></div></section><p class="muted">ملفات مترجمة في المشروع: ${sourceFiles.map((candidate) => `<span class="chip">${escapeHtml(candidate.name)}</span>`).join(" ")}</p>${dependencyNote}<section class="panel"><pre>${escapeHtml(file.content)}</pre></section></main>${runtime}`,
-    `${file.name} · ${label}`,
-    `${BASE_STYLE}\n${escapeStyleContent(projectStyles)}\n.scene{overflow:hidden;border:1px solid #2d3d54;border-radius:16px;background:#111823;margin:18px 0}.scene-bar{display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid #2d3d54}.live-dot{width:8px;height:8px;border-radius:50%;background:#53c68c;box-shadow:0 0 12px #53c68c}.scene-tag,.chip{padding:2px 7px;border:1px solid #2d3d54;border-radius:999px;color:#61dafb;font:11px monospace}.scene-tag{margin-right:auto}.scene-body{min-height:140px;padding:28px;background:radial-gradient(circle at 80% 10%,#1b3850,#0b0f16 55%)}.runtime-output{min-height:84px;display:grid;place-items:center;padding:16px;border-radius:12px;background:#081018;border:1px solid #2d3d54;color:#dbe3ee;font:13px/1.6 SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-word;direction:ltr;text-align:left}.runtime-output.error{color:#ff9b95;border-color:#8d3f45}.loader{width:18px;height:18px;border:2px solid #2d3d54;border-top-color:#61dafb;border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`,
-  );
+  const modules = projectModules(files, file);
+  const runtime = moduleRunner(modules, file.name);
+  return documentShell(`<div id="root"></div><div id="runtime-output"></div>${runtime}`, file.name, `${BASE_STYLE}\n${projectStyles}\nbody{padding:0}#runtime-output{position:fixed;inset:auto 12px 12px;max-height:35vh;overflow:auto;color:#ff8f8a;background:#080c12;white-space:pre-wrap;font:12px monospace}:empty{display:none}`);
+}
+
+function resolvePreviewEntry(files: IDEFile[], active: IDEFile): IDEFile {
+  const available = new Map(files.map((file) => [file.name, file]));
+  const manifest = manifestForProject({ id: "preview", name: "preview", files, activeFile: active.name, sourceUrl: "", sourceType: "local", updatedAt: 0 });
+  const declared = available.get(manifest.entry);
+  if (declared && (languageForFile(declared.name) === "HTML" || isWebModule(declared))) return declared;
+  if (declared && languageForFile(declared.name) === "Python" && !files.some(isWebModule)) return declared;
+  const html = files.find((file) => file.name.toLowerCase() === "index.html") ?? files.find((file) => languageForFile(file.name) === "HTML");
+  if (html) return html;
+  for (const preferred of ["App.tsx", "App.jsx", "app.tsx", "app.jsx", "index.tsx", "index.jsx", "main.tsx", "main.jsx", "index.ts", "main.ts", "main.js"]) {
+    const match = files.find((file) => file.name.toLowerCase() === preferred.toLowerCase());
+    if (match) return match;
+  }
+  return files.find(isWebModule) ?? files.find((file) => languageForFile(file.name) === "Python") ?? active;
+}
+
+export function projectPreviewEntry(files: IDEFile[], active: IDEFile): IDEFile {
+  return resolvePreviewEntry(files, active);
 }
 
 export function buildHtmlPreview(file: IDEFile, files: IDEFile[]): string {
   const language = languageForFile(file.name);
-  const stylesheet = files
-    .filter((candidate) => languageForFile(candidate.name) === "CSS")
-    .map((candidate) => `/* ${candidate.name} */\n${candidate.content}`)
-    .join("\n");
+  const stylesheet = files.filter((candidate) => languageForFile(candidate.name) === "CSS").map((candidate) => `/* ${candidate.name} */\n${candidate.content}`).join("\n");
 
   if (language === "HTML") {
     let html = file.content;
-    const scripts = files
-      .filter((candidate) => ["JavaScript", "TypeScript"].includes(languageForFile(candidate.name)))
-      .map((candidate) => `<script type="module">// ${escapeHtml(candidate.name)}\n${escapeScriptContent(candidate.content)}</script>`)
-      .join("");
-    const head = `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}">${stylesheet ? `<style>${escapeStyleContent(stylesheet)}</style>` : ""}`;
-    if (!/<html\b/i.test(html))
-      html = `<!doctype html><html lang="ar" dir="rtl"><head></head><body>${html}</body></html>`;
-    if (/<head\b[^>]*>/i.test(html))
-      html = html.replace(
-        /<head\b[^>]*>/i,
-        (openingTag) => `${openingTag}${head}${scripts}`,
-      );
-    else
-      html = html.replace(
-        /<html\b[^>]*>/i,
-        (openingTag) => `${openingTag}<head>${head}${scripts}</head>`,
-      );
-    return html;
+    if (!/<html\b/i.test(html)) html = `<!doctype html><html lang="ar" dir="rtl"><head></head><body>${html}</body></html>`;
+    const head = `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"><meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}">${stylesheet ? `<style>${escapeStyleContent(stylesheet)}</style>` : ""}`;
+    const modules = projectModules(files, file);
+    const roots = modules.map((candidate) => candidate.name);
+    const component = modules.find((candidate) => /^app\.(jsx|tsx)$/i.test(candidate.name)) ?? modules.find((candidate) => /^(index|main)\.(jsx|tsx)$/i.test(candidate.name));
+    const runner = moduleRunner(modules, component?.name ?? roots[0] ?? file.name, roots);
+    const headPattern = /<head\b[^>]*>/i;
+    if (headPattern.test(html)) html = html.replace(headPattern, (opening) => `${opening}${head}`);
+    else html = html.replace(/<html\b[^>]*>/i, (opening) => `${opening}<head>${head}</head>`);
+    return /<\/body\s*>/i.test(html) ? html.replace(/<\/body\s*>/i, `${runner}</body>`) : html.replace(/<\/html\s*>/i, `${runner}</html>`);
   }
 
-  if (language === "CSS") {
-    return documentShell(
-      `<main><span class="badge">CSS</span><h1>معاينة الأنماط</h1><p>هذه عينة رسومية للأنماط الموجودة في ${escapeHtml(file.name)}.</p><section class="panel preview-sample"><h2>عنوان تجريبي</h2><p>يتغير هذا المحتوى وفق CSS الخاص بك.</p><button>زر تجريبي</button></section></main>`,
-      file.name,
-      `${BASE_STYLE}\n${file.content}`,
-    );
-  }
-
-  if (language === "Markdown") {
-    return documentShell(
-      `<main class="md"><span class="badge">Markdown</span>${markdownBody(file.content)}</main>`,
-      file.name,
-      BASE_STYLE,
-    );
-  }
-
+  if (["JavaScript", "TypeScript", "JSX", "TSX", "Python"].includes(language)) return codePreview(file, files, stylesheet);
+  if (language === "CSS") return documentShell(`<main><h1>معاينة CSS</h1><section class="panel"><h2>عنوان تجريبي</h2><p>هذه عينة لتعديل الأنماط. عاين التطبيق من ملف الدخول.</p><button>زر تجريبي</button></section></main>`, file.name, `${BASE_STYLE}\n${file.content}`);
+  if (language === "Markdown") return documentShell(`<main class="md">${markdownBody(file.content)}</main>`, file.name, BASE_STYLE);
   if (language === "JSON") {
     let formatted = file.content;
-    try {
-      formatted = JSON.stringify(JSON.parse(file.content), null, 2);
-    } catch {
-      /* keep invalid JSON visible */
-    }
-    return documentShell(
-      `<main><span class="badge">JSON</span><h1>${escapeHtml(file.name)}</h1><p class="muted">معاينة بيانات غير تنفيذية.</p><section class="panel"><pre>${escapeHtml(formatted)}</pre></section></main>`,
-      file.name,
-      BASE_STYLE,
-    );
+    try { formatted = JSON.stringify(JSON.parse(file.content), null, 2); } catch { /* show invalid JSON as entered */ }
+    return documentShell(`<main><h1>${escapeHtml(file.name)}</h1><section class="panel"><pre>${escapeHtml(formatted)}</pre></section></main>`, file.name, BASE_STYLE);
   }
-
-  return codePreview(file, language, files, stylesheet);
+  return documentShell(`<main><h1>${escapeHtml(file.name)}</h1><section class="panel"><pre>${escapeHtml(file.content)}</pre></section></main>`, file.name, BASE_STYLE);
 }

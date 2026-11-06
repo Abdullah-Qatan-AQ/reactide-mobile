@@ -1,4 +1,5 @@
 import { StatusBar } from "expo-status-bar";
+import { NavigationBar } from "expo-navigation-bar";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -21,7 +22,7 @@ import type { TerminalLine } from "@/components/ide/terminal-panel";
 import { clearGithubToken, getGithubToken, getGithubViewer, GithubRepo, GithubViewer, listGithubRepos, saveGithubToken } from "@/lib/github-api";
 import { parseImportedProject, pickProjectInput, shareProjectBundle } from "@/lib/file-transfer";
 import { getWorkspaceStatus, installWorkspacePackage, runWorkspaceCommand } from "@/lib/workspace-api";
-import { getRuntimeWorkspacePath, installRuntime, isRuntimeInstalled, isRuntimeNativeAvailable, runRuntimeCommand, syncRuntimeFiles } from "@reactide/termux-runtime";
+import { addRuntimeShellExitListener, addRuntimeShellOutputListener, getRuntimeWorkspacePath, installRuntime, isRuntimeInstalled, isRuntimeNativeAvailable, prepareRuntimeShell, startRuntimeShell, syncRuntimeFiles, writeRuntimeShell } from "@reactide/termux-runtime";
 import type { SafeWorkspaceCommand, WorkspaceStatus } from "@/lib/workspace-api";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -82,7 +83,6 @@ export default function HomeScreen() {
   const [fontSize, setFontSize] = useState(14);
   const dark = colorScheme === "dark";
   const [running, setRunning] = useState(false);
-  const [previewExpanded, setPreviewExpanded] = useState(false);
   const [previewReloadKey, setPreviewReloadKey] = useState(0);
   const [saved, setSaved] = useState(true);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
@@ -96,6 +96,10 @@ export default function HomeScreen() {
   const [termuxInstalled, setTermuxInstalled] = useState(false);
   const [termuxInstalling, setTermuxInstalling] = useState(false);
   const [termuxStatus, setTermuxStatus] = useState("جارٍ فحص بيئة Termux...");
+  const [termuxRetryKey, setTermuxRetryKey] = useState(0);
+  const [termuxShellReady, setTermuxShellReady] = useState(false);
+  const [termuxShellConnecting, setTermuxShellConnecting] = useState(false);
+  const [termuxShellRetryKey, setTermuxShellRetryKey] = useState(0);
   const syncedTermuxProject = useRef("");
   const [workspaceStatus, setWorkspaceStatus] = useState<WorkspaceStatus | null>(null);
   const [workspaceError, setWorkspaceError] = useState("");
@@ -139,6 +143,7 @@ export default function HomeScreen() {
         if (!isRuntimeNativeAvailable()) throw new Error("وحدة تشغيل Termux غير موجودة في هذا البناء.");
         setTermuxAvailable(true);
         if (await isRuntimeInstalled()) {
+          await prepareRuntimeShell();
           if (!cancelled) {
             setTermuxInstalled(true);
             setTermuxStatus("Termux جاهز · مستودعات Termux الرسمية");
@@ -160,7 +165,55 @@ export default function HomeScreen() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [termuxRetryKey]);
+
+  useEffect(() => {
+    if (Platform.OS !== "android" || view !== "terminal" || !termuxInstalled) {
+      setTermuxShellReady(false);
+      return;
+    }
+    let cancelled = false;
+    setTermuxShellConnecting(true);
+    const outputSubscription = addRuntimeShellOutputListener(({ text }) => {
+      const clean = text.replace(/\r/g, "");
+      if (!clean) return;
+      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, kind: "output" as const, text: clean }].slice(-500));
+    });
+    const exitSubscription = addRuntimeShellExitListener(({ exitCode }) => {
+      setTermuxShellReady(false);
+      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-termux-exit`, kind: "system", text: `جلسة shell انتهت (exit ${exitCode})` }]);
+    });
+    void (async () => {
+      try {
+        const projectSnapshot = JSON.stringify(project.files.map((item) => [item.name, item.content]));
+        const workspacePath = projectSnapshot !== syncedTermuxProject.current
+          ? await syncRuntimeFiles(project.files)
+          : await getRuntimeWorkspacePath();
+        syncedTermuxProject.current = projectSnapshot;
+        await prepareRuntimeShell();
+        await startRuntimeShell(workspacePath);
+        if (!cancelled) {
+          setTermuxShellReady(true);
+          setTermuxStatus("طرفية Termux تفاعلية جاهزة · Bash داخل جلسة PTY");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setTermuxShellReady(false);
+          setTermuxStatus(error instanceof Error ? error.message : "تعذر تشغيل جلسة Termux التفاعلية.");
+          setTerminalLines((lines) => [...lines, { id: `${Date.now()}-termux-shell-error`, kind: "error", text: error instanceof Error ? error.message : "تعذر تشغيل جلسة Termux التفاعلية." }]);
+        }
+      } finally {
+        if (!cancelled) setTermuxShellConnecting(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      outputSubscription?.remove();
+      exitSubscription?.remove();
+      setTermuxShellReady(false);
+      setTermuxShellConnecting(false);
+    };
+  }, [view, termuxInstalled, project.files, termuxShellRetryKey]);
 
   const refreshWorkspaceStatus = useCallback(async () => {
     if (Platform.OS !== "web" || !isAuthenticated) {
@@ -333,7 +386,6 @@ export default function HomeScreen() {
   const runProject = () => {
     if (!project || !activeFile) return;
     setView("preview");
-    setPreviewExpanded(false);
     setRunning(true);
     setPreviewReloadKey((key) => key + 1);
     appendLog("info", `تم تحديث معاينة ${activeFile.name} (${languageForFile(activeFile.name)}) داخل WebView محصور الشبكة.`);
@@ -405,22 +457,14 @@ export default function HomeScreen() {
     const command = terminalCommand.trim();
     if (!command || terminalRunning) return;
     if (Platform.OS !== "web") {
-      if (!termuxAvailable || !termuxInstalled) {
+      if (!termuxAvailable || !termuxInstalled || !termuxShellReady) {
         setTerminalLines((lines) => [...lines, { id: `${Date.now()}-termux-wait`, kind: "system", text: termuxStatus || "انتظر تجهيز بيئة Termux الرسمية..." }]);
         return;
       }
       setTerminalCommand("");
       setTerminalRunning(true);
-      setTerminalLines((lines) => [...lines, { id: `${Date.now()}-termux-cmd`, kind: "command", text: command }]);
       try {
-        const projectSnapshot = JSON.stringify(project.files.map((item) => [item.name, item.content]));
-        const workspacePath = projectSnapshot !== syncedTermuxProject.current
-          ? await syncRuntimeFiles(project.files)
-          : await getRuntimeWorkspacePath();
-        syncedTermuxProject.current = projectSnapshot;
-        const result = await runRuntimeCommand(command, workspacePath);
-        const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n");
-        setTerminalLines((lines) => [...lines, { id: `${Date.now()}-termux-out`, kind: result.exitCode === 0 ? "output" : "error", text: output || `(exit ${result.exitCode})` }]);
+        await writeRuntimeShell(`${command}\n`);
       } catch (error) {
         setTerminalLines((lines) => [...lines, { id: `${Date.now()}-termux-err`, kind: "error", text: error instanceof Error ? error.message : "تعذر تشغيل أمر Termux" }]);
       } finally {
@@ -451,18 +495,14 @@ export default function HomeScreen() {
 
   const installPackage = async () => {
     const packageName = terminalPackage.trim();
-    if (!packageName || terminalRunning) return;
+    if (!packageName || terminalRunning || !/^[A-Za-z0-9][A-Za-z0-9+_.-]*$/.test(packageName)) return;
     setTerminalRunning(true);
-    setTerminalLines((lines) => [...lines, { id: `${Date.now()}-install`, kind: "command", text: Platform.OS === "web" ? `pnpm add --ignore-scripts --save-exact ${packageName}` : `pkg install -y ${packageName}` }]);
+    if (Platform.OS === "web") setTerminalLines((lines) => [...lines, { id: `${Date.now()}-install`, kind: "command", text: `pnpm add --ignore-scripts --save-exact ${packageName}` }]);
     setTerminalPackage("");
     try {
       if (Platform.OS !== "web") {
-        if (!termuxAvailable || !termuxInstalled) throw new Error("بيئة Termux الرسمية قيد التثبيت.");
-        const result = await runRuntimeCommand(`pkg install -y ${packageName}`);
-        const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n");
-        if (result.exitCode !== 0) throw new Error(output || `فشل تثبيت ${packageName} من مستودع Termux.`);
-        setTerminalLines((lines) => [...lines, { id: `${Date.now()}-install-out`, kind: "output", text: output || `تم تثبيت ${packageName} من مستودع Termux.` }]);
-        appendLog("success", `تم تثبيت ${packageName} من مستودع Termux`);
+        if (!termuxAvailable || !termuxInstalled || !termuxShellReady) throw new Error("جلسة shell تفاعلية غير جاهزة.");
+        await writeRuntimeShell(`pkg install -y ${packageName}\n`);
       } else {
         if (!isAuthenticated || !workspaceStatus?.available) throw new Error("سجّل الدخول أولًا لتفعيل runtime الويب.");
         const result = await installWorkspacePackage(packageName);
@@ -526,10 +566,11 @@ export default function HomeScreen() {
   const nativeDirectionStyle = Platform.OS === "web" ? undefined : { direction: "rtl" as const };
 
   return (
-    <SafeAreaView style={[styles.safe, nativeDirectionStyle, { backgroundColor: screenBg }]} edges={["top", "left", "right", "bottom"]}>
-      <StatusBar style={dark ? "light" : "dark"} />
+    <SafeAreaView style={[styles.safe, nativeDirectionStyle, { backgroundColor: screenBg }]} edges={view === "preview" ? [] : ["top", "left", "right", "bottom"]}>
+      <StatusBar style={dark ? "light" : "dark"} hidden={view === "preview"} />
+      {Platform.OS === "android" && <NavigationBar style={dark ? "dark" : "light"} hidden={view === "preview"} />}
       <KeyboardAvoidingView style={styles.safe} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        {!(view === "preview" && previewExpanded) && <View style={[styles.topbar, { backgroundColor: panelBg }]}>
+        {view !== "preview" && <View style={[styles.topbar, { backgroundColor: panelBg }]}>
           <View style={styles.brandWrap}><View style={styles.logoSmall}><Text style={styles.logoSmallText}>R&gt;</Text></View><View><Text style={[styles.brandName, { color: textColor }]}>React IDE</Text><Text style={styles.brandSub}>native workspace</Text></View></View>
           <View style={styles.topActions}>
             <Pressable onPress={undo} disabled={undoStack.length === 0} style={[styles.topIcon, undoStack.length === 0 && styles.topIconDisabled]}><Text style={styles.topIconText}>↶</Text></Pressable>
@@ -550,17 +591,17 @@ export default function HomeScreen() {
             <View style={styles.editorTitle}><Text style={styles.breadcrumb}>mobile-starter / </Text><Text style={[styles.activeName, { color: textColor }]}>{activeFile.name}</Text><Pressable style={styles.editorMenu} onPress={() => setView("files")}><Text style={styles.editorMenuText}>الملفات ↗</Text></Pressable></View>
             <CodeEditor file={activeFile} fontSize={fontSize} onChange={updateFile} onCursorChange={(line, column) => setCursor({ line, column })} />
           </View>}
-          {view === "preview" && <PreviewPanel file={activeFile} files={project.files} running={running} reloadKey={previewReloadKey} expanded={previewExpanded} onToggleExpanded={() => setPreviewExpanded((expanded) => !expanded)} onRun={runProject} onOpenEditor={() => { setPreviewExpanded(false); setView("editor"); }} onLoadComplete={() => setRunning(false)} />}
+          {view === "preview" && <PreviewPanel file={activeFile} files={project.files} running={running} reloadKey={previewReloadKey} onRun={runProject} onOpenEditor={() => setView("editor")} onLoadComplete={() => setRunning(false)} />}
           {view === "console" && <ConsolePanel logs={logs} />}
-          {view === "terminal" && <TerminalPanel lines={terminalLines} command={terminalCommand} running={terminalRunning} onCommandChange={setTerminalCommand} onRun={runTerminal} onPreset={setTerminalCommand} packageName={terminalPackage} onPackageNameChange={setTerminalPackage} onInstall={installPackage} authSupported={Platform.OS === "web"} localAvailable={Platform.OS !== "web"} packageRuntimeAvailable={Platform.OS === "web" ? Boolean(isAuthenticated && workspaceStatus?.available) : Boolean(termuxAvailable && termuxInstalled)} runtimeInstalling={termuxInstalling} runtimeStatus={termuxStatus} authenticated={Platform.OS === "web" && isAuthenticated} workspaceStatus={workspaceStatus} workspaceError={workspaceError} userName={user?.name} onLogin={handleLogin} onLogout={handleLogout} onRefresh={refreshWorkspaceStatus} />}
+          {view === "terminal" && <TerminalPanel lines={terminalLines} command={terminalCommand} running={terminalRunning} onCommandChange={setTerminalCommand} onRun={runTerminal} onInterrupt={() => { void writeRuntimeShell("\u0003").catch(() => undefined); }} onPreset={setTerminalCommand} packageName={terminalPackage} onPackageNameChange={setTerminalPackage} onInstall={installPackage} authSupported={Platform.OS === "web"} localAvailable={Platform.OS !== "web"} packageRuntimeAvailable={Platform.OS === "web" ? Boolean(isAuthenticated && workspaceStatus?.available) : Boolean(termuxAvailable && termuxInstalled)} localSessionReady={Platform.OS === "web" || termuxShellReady} runtimeInstalling={termuxInstalling || termuxShellConnecting} runtimeStatus={termuxStatus} onRetryRuntime={() => { setTermuxStatus("جارٍ إعادة تهيئة Termux..."); setTermuxRetryKey((key) => key + 1); }} onReconnectShell={() => { setTermuxShellConnecting(true); setTermuxShellRetryKey((key) => key + 1); }} authenticated={Platform.OS === "web" && isAuthenticated} workspaceStatus={workspaceStatus} workspaceError={workspaceError} userName={user?.name} onLogin={handleLogin} onLogout={handleLogout} onRefresh={refreshWorkspaceStatus} />}
           {view === "files" && <FilesPanel files={project.files} activeFile={project.activeFile} onSelect={selectFile} onAdd={openAddFile} onImport={importFiles} onExport={exportFiles} onRename={openRename} onDelete={deleteFile} />}
           {view === "projects" && <ProjectsPanel project={project} externalUrl={project.sourceUrl} onExternalUrlChange={(value) => { setSaved(false); setProject({ ...project, sourceUrl: value }); }} onConnect={() => { setModalValue(project.sourceUrl); setModalKind("source"); }} onOpenUrl={openExternal} githubToken={githubToken} githubViewer={githubViewer} githubRepos={githubRepos} githubBusy={githubBusy} onGithubTokenChange={setGithubToken} onGithubConnect={connectGithub} onGithubDisconnect={disconnectGithub} />}
           {view === "settings" && <SettingsPanel fontSize={fontSize} onChangeFontSize={setFontSize} onReset={resetProject} colorScheme={colorScheme} onChangeColorScheme={setColorScheme} />}
           </Suspense>
         </View>
 
-        {!(view === "preview" && previewExpanded) && <View style={[styles.statusbar, { backgroundColor: panelBg }]}><Text style={styles.statusText}>Ln {cursor.line}, Col {cursor.column}</Text><Text style={styles.statusDivider}>·</Text><Text style={styles.statusText}>{languageForFile(activeFile.name)}</Text><Text style={styles.statusDivider}>·</Text><Text style={[styles.statusText, { color: saved ? "#53c68c" : "#d29922" }]}>{saved ? "✓ محفوظ محليًا" : "● تعديل غير محفوظ"}</Text><Pressable style={styles.shareStatus} onPress={shareProject}><Text style={styles.shareStatusText}>مشاركة ↗</Text></Pressable></View>}
-        {!(view === "preview" && previewExpanded) && <View style={[styles.navbar, { backgroundColor: panelBg }]}>{NAV_ITEMS.map((item) => { const active = view === item.key; return <Pressable key={item.key} onPress={() => setView(item.key)} style={styles.navItem}><View style={[styles.navIconWrap, active && styles.navIconActive]}><Text style={[styles.navIcon, active && styles.navIconTextActive]}>{item.icon}</Text>{item.key === "console" && logs.some((log) => log.level === "error") && <View style={styles.errorBadge} />}</View><Text style={[styles.navLabel, active && styles.navLabelActive]}>{item.label}</Text></Pressable>; })}</View>}
+        {view !== "preview" && <View style={[styles.statusbar, { backgroundColor: panelBg }]}><Text style={styles.statusText}>Ln {cursor.line}, Col {cursor.column}</Text><Text style={styles.statusDivider}>·</Text><Text style={styles.statusText}>{languageForFile(activeFile.name)}</Text><Text style={styles.statusDivider}>·</Text><Text style={[styles.statusText, { color: saved ? "#53c68c" : "#d29922" }]}>{saved ? "✓ محفوظ محليًا" : "● تعديل غير محفوظ"}</Text><Pressable style={styles.shareStatus} onPress={shareProject}><Text style={styles.shareStatusText}>مشاركة ↗</Text></Pressable></View>}
+        {view !== "preview" && <View style={[styles.navbar, { backgroundColor: panelBg }]}>{NAV_ITEMS.map((item) => { const active = view === item.key; return <Pressable key={item.key} onPress={() => setView(item.key)} style={styles.navItem}><View style={[styles.navIconWrap, active && styles.navIconActive]}><Text style={[styles.navIcon, active && styles.navIconTextActive]}>{item.icon}</Text>{item.key === "console" && logs.some((log) => log.level === "error") && <View style={styles.errorBadge} />}</View><Text style={[styles.navLabel, active && styles.navLabelActive]}>{item.label}</Text></Pressable>; })}</View>}
       </KeyboardAvoidingView>
 
       <Modal visible={modalKind !== null} transparent animationType="slide" onRequestClose={() => setModalKind(null)}>

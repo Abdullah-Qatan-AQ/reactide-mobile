@@ -19,10 +19,10 @@
     "qr": "node scripts/generate_qr.mjs"
   },
   "dependencies": {
-    "@reactide/termux-runtime": "file:modules/termux-runtime",
     "@expo/metro-runtime": "~57.0.17",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@reactide/termux-runtime": "file:modules/termux-runtime",
     "@tanstack/react-query": "^5.90.12",
     "@trpc/client": "11.7.2",
     "@trpc/react-query": "11.7.2",
@@ -45,6 +45,7 @@
     "expo-image": "~57.0.5",
     "expo-keep-awake": "~57.0.2",
     "expo-linking": "~57.0.13",
+    "expo-navigation-bar": "~57.0.3",
     "expo-notifications": "~57.0.24",
     "expo-router": "~57.0.29",
     "expo-secure-store": "~57.0.4",
