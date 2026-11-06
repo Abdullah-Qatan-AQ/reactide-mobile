@@ -6,9 +6,7 @@ import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
 import android.content.Context
 import android.os.Build
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.ZipFile
@@ -17,6 +15,7 @@ private const val RUNTIME_DIR = "termux-runtime"
 private const val PREFIX_DIR = "usr"
 private const val MARKER = ".installed"
 private const val TERMUX_PREFIX = "/data/data/com.termux/files/usr"
+private const val MAX_PROJECT_BYTES = 4_000_000
 
 class RuntimeInstallException(message: String, cause: Throwable? = null) : CodedException(message, cause)
 
@@ -32,40 +31,44 @@ class TermuxRuntimeModule : Module() {
 
     AsyncFunction("isInstalled") { root.resolve(MARKER).isFile && prefix.resolve("bin/sh").canExecute() }
 
-    AsyncFunction("install") { url: String, promise: Promise ->
+    AsyncFunction("workspacePath") { workspace.absolutePath }
+
+    AsyncFunction("install") { promise: Promise ->
       Thread {
         try {
-          val count = installBootstrap(url)
-          promise.resolve(mapOf("prefix" to prefix.absolutePath, "files" to count))
+          val count = installBootstrap()
+          val update = runCommand("pkg update -y", workspace)
+          promise.resolve(mapOf("prefix" to prefix.absolutePath, "files" to count, "updateExitCode" to update.third))
         } catch (error: Throwable) {
           promise.reject("ERR_RUNTIME_INSTALL", error.message ?: "تعذر تثبيت runtime", error)
         }
       }.start()
     }
 
+    AsyncFunction("syncFiles") { files: List<Map<String, String>> ->
+      var total = 0
+      val seen = mutableSetOf<String>()
+      workspace.mkdirs()
+      files.forEach { item ->
+        val name = item["name"] ?: throw RuntimeInstallException("اسم ملف غير صالح")
+        val content = item["content"] ?: throw RuntimeInstallException("محتوى ملف غير صالح")
+        require(name.length <= 120 && name.matches(Regex("[A-Za-z0-9_.-]+")) && name != "." && name != "..") { "اسم ملف غير مسموح: $name" }
+        require(seen.add(name.lowercase())) { "اسم ملف مكرر: $name" }
+        total += content.toByteArray(Charsets.UTF_8).size
+        require(total <= MAX_PROJECT_BYTES) { "حجم ملفات المشروع أكبر من 4 ميغابايت" }
+        File(workspace, name).writeText(content, Charsets.UTF_8)
+      }
+      workspace.listFiles()?.filter { it.isFile && it.name !in seen }?.forEach { it.delete() }
+      workspace.absolutePath
+    }
+
     AsyncFunction("run") { command: String, cwd: String?, promise: Promise ->
       Thread {
         try {
-          if (!root.resolve(MARKER).isFile) throw RuntimeInstallException("ثبّت runtime أولًا")
-          val workDir = cwd?.let { File(it) }?.takeIf { it.isDirectory } ?: File(context.filesDir, "workspace")
-          workDir.mkdirs()
-          val process = ProcessBuilder(prefix.resolve("bin/sh").absolutePath, "-lc", command)
-            .directory(workDir)
-            .redirectErrorStream(false)
-          val env = process.environment()
-          env["PREFIX"] = prefix.absolutePath
-          env["TERMUX_PREFIX"] = prefix.absolutePath
-          env["HOME"] = File(root, "home").absolutePath
-          env["TMPDIR"] = File(root, "tmp").absolutePath
-          env["PATH"] = listOf(prefix.resolve("bin"), prefix.resolve("bin/applets")).joinToString(File.pathSeparator)
-          env["LD_LIBRARY_PATH"] = prefix.resolve("lib").absolutePath
-          env["LANG"] = "C.UTF-8"
-          File(root, "home").mkdirs(); File(root, "tmp").mkdirs()
-          val child = process.start()
-          val stdout = child.inputStream.bufferedReader().use(BufferedReader::readText)
-          val stderr = child.errorStream.bufferedReader().use(BufferedReader::readText)
-          val exitCode = child.waitFor()
-          promise.resolve(mapOf("stdout" to stdout, "stderr" to stderr, "exitCode" to exitCode))
+          if (!root.resolve(MARKER).isFile) throw RuntimeInstallException("Termux قيد التثبيت؛ أعد المحاولة بعد اكتماله")
+          val workDir = cwd?.let { File(it).canonicalFile }?.takeIf { it.isDirectory && it.path.startsWith(context.filesDir.canonicalPath) } ?: workspace
+          val result = runCommand(command, workDir)
+          promise.resolve(mapOf("stdout" to result.first, "stderr" to result.second, "exitCode" to result.third))
         } catch (error: Throwable) {
           promise.reject("ERR_RUNTIME_COMMAND", error.message ?: "تعذر تشغيل الأمر", error)
         }
@@ -73,7 +76,45 @@ class TermuxRuntimeModule : Module() {
     }
   }
 
-  private fun installBootstrap(url: String): Int {
+  private val workspace: File get() = File(root, "workspace")
+
+  private fun runCommand(command: String, workDir: File): Triple<String, String, Int> {
+    workDir.mkdirs()
+    File(root, "home").mkdirs(); File(root, "tmp").mkdirs()
+    val process = ProcessBuilder(prefix.resolve("bin/sh").absolutePath, "-lc", command)
+      .directory(workDir)
+      .redirectErrorStream(false)
+    val env = process.environment()
+    env["PREFIX"] = prefix.absolutePath
+    env["TERMUX_PREFIX"] = prefix.absolutePath
+    env["HOME"] = File(root, "home").absolutePath
+    env["TMPDIR"] = File(root, "tmp").absolutePath
+    env["PATH"] = listOf(prefix.resolve("bin"), prefix.resolve("bin/applets")).joinToString(File.pathSeparator)
+    env["LD_LIBRARY_PATH"] = prefix.resolve("lib").absolutePath
+    env["LANG"] = "C.UTF-8"
+    env["TERM"] = "xterm-256color"
+    env["COLORTERM"] = "truecolor"
+    env["ANDROID_ROOT"] = "/system"
+    env["ANDROID_DATA"] = "/data"
+    val child = process.start()
+    val stdout = StringBuilder(); val stderr = StringBuilder()
+    val outThread = Thread { child.inputStream.bufferedReader().use { stdout.append(it.readText()) } }.apply { start() }
+    val errThread = Thread { child.errorStream.bufferedReader().use { stderr.append(it.readText()) } }.apply { start() }
+    val exitCode = child.waitFor()
+    outThread.join(); errThread.join()
+    return Triple(stdout.toString(), stderr.toString(), exitCode)
+  }
+
+  private fun installBootstrap(): Int {
+    val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+    val archive = when (abi) {
+      "arm64-v8a" -> "bootstrap-aarch64.zip"
+      "armeabi-v7a", "armeabi" -> "bootstrap-arm.zip"
+      "x86_64" -> "bootstrap-x86_64.zip"
+      "x86" -> "bootstrap-i686.zip"
+      else -> throw RuntimeInstallException("معمارية Android غير مدعومة من Termux: $abi")
+    }
+    val url = "https://github.com/termux/termux-packages/releases/download/bootstrap-2025.03.28-r1%2Bapt-android-7/$archive"
     require(url.startsWith("https://github.com/termux/termux-packages/releases/")) { "مصدر Bootstrap غير مسموح" }
     val staging = File(context.cacheDir, "termux-bootstrap-${System.currentTimeMillis()}")
     staging.deleteRecursively(); staging.mkdirs()
@@ -87,6 +128,7 @@ class TermuxRuntimeModule : Module() {
     val newPrefix = File(staging, PREFIX_DIR)
     newPrefix.mkdirs()
     var count = 0
+    val linksToCreate = mutableListOf<Pair<String, String>>()
     ZipFile(zipFile).use { zip ->
       zip.entries().asSequence().forEach { entry ->
         val relative = entry.name.removePrefix("./")
@@ -104,15 +146,26 @@ class TermuxRuntimeModule : Module() {
       val links = zip.getEntry("SYMLINKS.txt")
       if (links != null) {
         zip.getInputStream(links).bufferedReader().useLines { lines -> lines.forEach { line ->
-          val parts = line.split("←", limit = 2); if (parts.size != 2) return@forEach
+          val parts = line.split("←", limit = 2)
+          if (parts.size != 2) return@forEach
           val link = File(staging, parts[1]).canonicalFile
           val source = File(link.parentFile, parts[0]).canonicalFile
-          if (link.path.startsWith(staging.canonicalPath + File.separator)) { link.parentFile?.mkdirs(); link.delete(); try { android.system.Os.symlink(source.path, link.path) } catch (_: Throwable) { link.writeText(source.readText()) } }
+          val usrRoot = File(staging, PREFIX_DIR).canonicalPath + File.separator
+          if (link.path.startsWith(usrRoot) && source.path.startsWith(usrRoot)) {
+            linksToCreate += parts[1] to source.relativeTo(staging).path
+          }
         } }
       }
     }
     root.deleteRecursively(); root.mkdirs()
     File(staging, PREFIX_DIR).copyRecursively(prefix, overwrite = true)
+    linksToCreate.forEach { (linkRelative, sourceRelative) ->
+      val link = File(prefix, linkRelative.removePrefix("$PREFIX_DIR/"))
+      val target = File(prefix, sourceRelative.removePrefix("$PREFIX_DIR/"))
+      link.parentFile?.mkdirs(); link.delete()
+      try { android.system.Os.symlink(target.absolutePath, link.absolutePath) }
+      catch (_: Throwable) { if (target.isFile) link.writeBytes(target.readBytes()) }
+    }
     File(root, MARKER).writeText("bootstrap=${url.substringAfterLast('/').substringBefore('?')}\ninstalledAt=${System.currentTimeMillis()}\n")
     staging.deleteRecursively()
     return count
